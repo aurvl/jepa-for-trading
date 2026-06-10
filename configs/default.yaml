@@ -1,0 +1,87 @@
+seed: 42
+device: auto
+
+data:
+  start: "2005-01-01"
+  end: null
+  macro_path: "data/raw/macro_data.parquet"
+  cache_dir: "data/cache"
+  processed_dir: "data/processed"
+  lookback: 70
+  horizons: [5, 15, 20, 45, 60]
+  train_end: "2019-12-31"
+  val_end: "2022-12-31"
+  tickers:
+    - AAPL
+    - MSFT
+    - NVDA
+    - AMZN
+    - GOOGL
+    - META
+    - JPM
+    - BAC
+    - XOM
+    - CVX
+    - UNH
+    - JNJ
+    - PFE
+    - PG
+    - KO
+    - WMT
+    - COST
+    - HD
+    - CAT
+    - BA
+    - GE
+    - SPY
+    - QQQ
+    - IWM
+    - XLF
+    - XLK
+    - XLE
+    - XLV
+    - XLI
+    - GLD
+    - TLT
+
+model:
+  d_model: 128
+  latent_dim: 128
+  n_heads: 4
+  n_layers: 3
+  dropout: 0.1
+  asset_embedding_dim: 16
+
+training:
+  batch_size: 32
+  jepa_max_steps: 2000
+  heads_max_steps: 1000
+  lr: 0.0003
+  weight_decay: 0.0001
+  ema_decay: 0.996
+  checkpoint_dir: "models"
+  log_every: 25
+  eval_every: 200
+
+portfolio:
+  cash_initial: 1000.0
+  transaction_cost_bps: 5.0
+  max_weight_per_asset: 0.15
+  max_turnover: 0.40
+  long_only: true
+
+ppo:
+  rollout_steps: 252
+  total_updates: 50
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_ratio: 0.2
+  entropy_coef: 0.01
+  value_coef: 0.5
+  lr: 0.0001
+  minibatch_size: 64
+  epochs_per_update: 4
+  reward_drawdown_penalty: 0.20
+  reward_turnover_penalty: 0.05
+  reward_concentration_penalty: 0.02
+

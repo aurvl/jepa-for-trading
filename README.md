@@ -1,16 +1,52 @@
 # JEPA for Trading
 
-Multi-asset JEPA world-modeling and portfolio-control research project.
+Multi-asset JEPA market representation learning plus a direct PPO portfolio
+agent.
 
-The first full implementation lives on the `version1` branch. The `main`
-branch is kept as a clean project base so experimental versions can be merged
-only after review.
+This branch implements V1:
 
-## Quick Start
+- prices from `yfinance`;
+- macro factors from `macro_data.parquet`;
+- per-asset sigma estimation from each asset history;
+- 70-day market windows;
+- JEPA self-supervised latent prediction for horizons `5, 15, 20, 45, 60`;
+- supervised market heads for returns, volatility, drawdown and quantiles;
+- long-only PPO portfolio agent with cash, transaction costs, max weights and
+  tradable-asset masks;
+- evaluation against Buy & Hold, equal weight, momentum, volatility targeting
+  and random strategies.
+
+The action does not pretend to move the market. Market latents are predicted
+from market context; actions only affect portfolio exposure, costs, PnL,
+turnover and drawdown.
+
+## Local Setup
 
 ```bash
 pip install -e ".[dev]"
+pytest -q
 ```
 
-See `notebooks/kaggle_run_jepa_trading.ipynb` on `version1` for the complete
-Kaggle-oriented training and evaluation pipeline.
+Place `macro_data.parquet` at:
+
+```text
+data/raw/macro_data.parquet
+```
+
+Then run:
+
+```bash
+python scripts/download_data.py
+python scripts/train_jepa.py
+```
+
+## Kaggle
+
+Use:
+
+```text
+notebooks/kaggle_run_jepa_trading.ipynb
+```
+
+Upload `macro_data.parquet` as a Kaggle dataset. The notebook auto-discovers it
+under `/kaggle/input`.
