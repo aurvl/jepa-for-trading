@@ -21,6 +21,15 @@ class V3PlannerResult:
     candidate_names: list[str]
     candidate_horizons: list[int]
     risk_off: bool
+    selected_reason: str
+    best_name: str
+    best_score: float
+    hold_score: float
+    cash_score: float
+    derisk_score: float
+    best_risk_name: str
+    best_risk_score: float
+    best_risk_predicted_outcome: np.ndarray
 
 
 class V3AbstentionPlanner:
@@ -32,10 +41,10 @@ class V3AbstentionPlanner:
         n_sampled_actions: int = 96,
         no_trade_margin: float = 0.002,
         cash_margin: float = 0.001,
-        turnover_energy_penalty: float = 0.02,
-        risk_off_drawdown_threshold: float = -0.08,
-        risk_on_bootstrap_tolerance: float = 0.03,
-        min_risk_on_log_return: float = -0.02,
+        turnover_energy_penalty: float = 0.005,
+        risk_off_drawdown_threshold: float = -0.20,
+        risk_on_bootstrap_tolerance: float = 0.50,
+        min_risk_on_log_return: float = -0.25,
         chunk_size: int = 256,
         device: torch.device | str = "cpu",
         seed: int = 42,
@@ -115,6 +124,7 @@ class V3AbstentionPlanner:
         derisk_idx = self._best_named_idx(scores, names, "derisk")
         best_risk_idx = self._best_risk_idx(scores, names)
         selected_idx = best_idx
+        selected_reason = "best_score"
         risk_off = bool(outcome_np[best_idx, 1] <= self.risk_off_drawdown_threshold)
         is_all_cash = bool(current_weights[-1] >= 0.98 and np.abs(current_weights[:-1]).sum() <= 0.02)
 
@@ -129,12 +139,15 @@ class V3AbstentionPlanner:
             )
             if risk_candidate_ok:
                 selected_idx = best_risk_idx
+                selected_reason = "cash_bootstrap_to_best_risk"
         if selected_idx == best_idx and scores[best_idx] <= scores[hold_idx] + self.no_trade_margin:
             selected_idx = hold_idx
+            selected_reason = "hold_beats_or_matches_best"
         elif risk_off:
             defensive_idx = cash_idx if scores[cash_idx] >= scores[derisk_idx] + self.cash_margin else derisk_idx
             if scores[defensive_idx] >= scores[best_idx] - self.cash_margin:
                 selected_idx = defensive_idx
+                selected_reason = "risk_off_defensive"
 
         return V3PlannerResult(
             action=actions_np[selected_idx],
@@ -147,6 +160,15 @@ class V3AbstentionPlanner:
             candidate_names=names,
             candidate_horizons=[int(h) for h in horizons_np.tolist()],
             risk_off=risk_off,
+            selected_reason=selected_reason,
+            best_name=names[best_idx],
+            best_score=float(scores[best_idx]),
+            hold_score=float(scores[hold_idx]),
+            cash_score=float(scores[cash_idx]),
+            derisk_score=float(scores[derisk_idx]),
+            best_risk_name=names[best_risk_idx],
+            best_risk_score=float(scores[best_risk_idx]),
+            best_risk_predicted_outcome=outcome_np[best_risk_idx],
         )
 
     @staticmethod

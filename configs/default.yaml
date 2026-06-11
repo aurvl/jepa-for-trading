@@ -114,10 +114,10 @@ v3:
   no_trade_margin: 0.0
   cash_margin: 0.0
   rank_margin: 0.05
-  turnover_energy_penalty: 0.02
-  risk_off_drawdown_threshold: -0.08
-  risk_on_bootstrap_tolerance: 0.03
-  min_risk_on_log_return: -0.02
+  turnover_energy_penalty: 0.005
+  risk_off_drawdown_threshold: -0.20
+  risk_on_bootstrap_tolerance: 0.50
+  min_risk_on_log_return: -0.25
   loss_weights:
     jepa: 1.0
     vicreg: 0.05

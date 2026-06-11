@@ -81,8 +81,19 @@ def run_v3_planner_backtest(
         info["planner_score"] = result.score
         info["planner_raw_score"] = result.raw_score
         info["selected_action_name"] = result.selected_name
+        info["selected_reason"] = result.selected_reason
+        info["best_candidate_name"] = result.best_name
+        info["best_candidate_score"] = result.best_score
+        info["hold_score"] = result.hold_score
+        info["cash_score"] = result.cash_score
+        info["derisk_score"] = result.derisk_score
+        info["best_risk_name"] = result.best_risk_name
+        info["best_risk_score"] = result.best_risk_score
         info["risk_off_flag"] = float(result.risk_off)
         info["predicted_log_return"] = float(result.predicted_outcome[0])
         info["predicted_drawdown"] = float(result.predicted_outcome[1])
         info["predicted_vol"] = float(result.predicted_outcome[2])
+        info["best_risk_predicted_log_return"] = float(result.best_risk_predicted_outcome[0])
+        info["best_risk_predicted_drawdown"] = float(result.best_risk_predicted_outcome[1])
+        info["best_risk_predicted_vol"] = float(result.best_risk_predicted_outcome[2])
     return pd.DataFrame(env.history)
