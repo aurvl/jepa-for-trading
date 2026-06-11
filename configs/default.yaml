@@ -64,9 +64,15 @@ training:
   eval_every: 200
 
 portfolio:
+  mode: long_only
   cash_initial: 1000.0
   transaction_cost_bps: 5.0
   max_weight_per_asset: 0.15
+  max_long_weight: 0.15
+  max_short_weight: 0.05
+  max_gross_exposure: 1.0
+  max_net_exposure: 1.0
+  borrow_cost_bps: 2.0
   max_turnover: 0.40
   long_only: true
 
@@ -85,3 +91,16 @@ ppo:
   reward_turnover_penalty: 0.05
   reward_concentration_penalty: 0.02
 
+v2:
+  world_max_steps: 3000
+  world_warmup_steps: 500
+  n_action_samples: 4
+  planner_action_samples: 128
+  planner_top_k: 1
+  hidden_dim: 256
+  loss_weights:
+    jepa: 1.0
+    vicreg: 0.05
+    outcome: 1.0
+    energy: 0.5
+    policy: 0.25

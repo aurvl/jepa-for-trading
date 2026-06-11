@@ -353,3 +353,79 @@ La direction naturelle pour V2 est :
 - walk-forward validation;
 - policy distillation depuis un planner JEPA;
 - contraintes de portefeuille plus institutionnelles.
+
+## 11. V2 : world model JEPA action-conditioned
+
+La V2 sépare explicitement deux niveaux :
+
+```text
+Market JEPA:
+    market_history + horizon
+        -> predicted future market latent
+
+Portfolio World Model:
+    market latent
+    predicted future market latent
+    current portfolio state
+    candidate action
+    horizon
+        -> predicted portfolio outcome
+```
+
+Le portfolio n'entre pas dans le market JEPA, car ton portefeuille ne cause
+pas le futur marché. En revanche, le portfolio entre dans le world model
+d'action, car c'est lui qui détermine les conséquences d'une allocation.
+
+```mermaid
+flowchart TD
+    A[Market history window] --> B[Market JEPA encoder]
+    B --> C[z_market_t]
+    C --> D[Horizon-conditioned predictor]
+    H[Horizon H] --> D
+    D --> E[z_market_hat_t_plus_H]
+    P[Portfolio state] --> F[Portfolio outcome model]
+    ACT[Candidate action] --> F
+    C --> F
+    E --> F
+    H --> F
+    F --> O[Predicted return, risk, drawdown, cost]
+    O --> EN[Energy / utility model]
+    EN --> PL[Planner chooses best action]
+```
+
+La training loop V2 est unifiée. Un seul batch entraîne :
+
+```text
+L_total =
+    L_JEPA
+    + lambda_vicreg  * L_VICReg
+    + lambda_outcome * L_portfolio_outcome
+    + lambda_energy  * L_energy
+    + lambda_policy  * L_policy_distillation
+```
+
+VICReg est ajouté pour éviter le collapse latent via variance et covariance
+regularization, ce qui est particulièrement utile dans une architecture JEPA
+avec EMA et actifs masqués.
+
+Le planner V2 imagine plusieurs couples `(action, horizon)` :
+
+```text
+for action in candidate_actions:
+    for H in horizons:
+        predict portfolio outcome
+        score with energy/utility
+
+execute argmax(score)
+```
+
+Les modes portfolio sont configurables :
+
+```yaml
+portfolio:
+  mode: long_only        # or long_short, market_neutral
+  max_long_weight: 0.15
+  max_short_weight: 0.05
+  max_gross_exposure: 1.0
+  max_net_exposure: 1.0
+```
