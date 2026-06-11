@@ -499,6 +499,12 @@ cost: [0, 1]
 utility: [-3, 3]
 ```
 
+Point mémoire critique : les trainers en `max_steps` ne doivent pas utiliser
+`itertools.cycle(train_loader)`. Cette fonction garde en mémoire tous les
+batches déjà vus pour pouvoir les rejouer, ce qui peut remplir la RAM Kaggle
+après plusieurs centaines ou milliers de steps. La V2 utilise donc un itérateur
+DataLoader recréé manuellement à chaque fin d'epoch, sans cache.
+
 Les modes portfolio sont configurables :
 
 ```yaml

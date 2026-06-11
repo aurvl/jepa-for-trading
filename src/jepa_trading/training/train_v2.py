@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from itertools import cycle
 from pathlib import Path
 
 import pandas as pd
@@ -94,14 +93,21 @@ def train_v2_world_model(
 ) -> pd.DataFrame:
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    batches = cycle(train_loader)
+    # Do not use itertools.cycle here: it caches every yielded batch and can
+    # silently fill Kaggle RAM during long max_steps training.
+    batches = iter(train_loader)
     best_val = float("inf")
     history: list[dict[str, float]] = []
 
     pbar = tqdm(range(1, max_steps + 1), desc="train V2 world model", dynamic_ncols=True)
     for step in pbar:
         model.train()
-        batch = _to_device(next(batches), device)
+        try:
+            batch = next(batches)
+        except StopIteration:
+            batches = iter(train_loader)
+            batch = next(batches)
+        batch = _to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
         outputs = model(batch)
         losses = v2_world_model_loss(outputs, batch, step, warmup_steps, weights)

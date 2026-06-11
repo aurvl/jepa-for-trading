@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from itertools import cycle
 from pathlib import Path
 
 import pandas as pd
@@ -53,11 +52,16 @@ def train_jepa(
     history: list[dict[str, float]] = []
     best_val = float("inf")
     pbar = tqdm(range(1, max_steps + 1), desc="train JEPA", dynamic_ncols=True)
-    batches = cycle(train_loader)
+    batches = iter(train_loader)
 
     for step in pbar:
         model.train()
-        batch = _to_device(next(batches), device)
+        try:
+            batch = next(batches)
+        except StopIteration:
+            batches = iter(train_loader)
+            batch = next(batches)
+        batch = _to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
         z_hat, z_target, _ = model(
             batch["context"],
@@ -91,4 +95,3 @@ def train_jepa(
             pbar.set_postfix(train_loss=f"{loss.item():.4f}", best_val=f"{best_val:.4f}")
 
     return pd.DataFrame(history)
-

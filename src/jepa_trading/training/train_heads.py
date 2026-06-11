@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from itertools import cycle
 from pathlib import Path
 
 import pandas as pd
@@ -55,13 +54,18 @@ def train_market_heads(
     for p in jepa.parameters():
         p.requires_grad_(False)
     optimizer = torch.optim.AdamW(heads.parameters(), lr=lr)
-    batches = cycle(train_loader)
+    batches = iter(train_loader)
     best_val = float("inf")
     history: list[dict[str, float]] = []
 
     for step in tqdm(range(1, max_steps + 1), desc="train heads", dynamic_ncols=True):
         heads.train()
-        batch = _to_device(next(batches), device)
+        try:
+            batch = next(batches)
+        except StopIteration:
+            batches = iter(train_loader)
+            batch = next(batches)
+        batch = _to_device(batch, device)
         optimizer.zero_grad(set_to_none=True)
         with torch.no_grad():
             z = jepa.encode_context(batch["context"], batch["context_mask"])
@@ -80,4 +84,3 @@ def train_market_heads(
                 save_checkpoint(checkpoint_path, heads, optimizer, step=step, val_loss=val_loss, kind="market_heads")
         history.append(row)
     return pd.DataFrame(history)
-
