@@ -24,6 +24,7 @@ class PortfolioActionConfig:
     max_abs_daily_log_return: float = 0.35
     max_daily_gross: float = 2.0
     min_daily_gross: float = 0.05
+    derisk_fraction: float = 0.50
 
 
 def _normalize_long_only(weights: np.ndarray, valid: np.ndarray, max_weight: float) -> np.ndarray:
@@ -89,6 +90,91 @@ def _sample_weights(
         return weights.astype(np.float32)
 
     raise ValueError(f"Unknown portfolio mode: {config.mode}")
+
+
+def cash_action(n_assets: int) -> np.ndarray:
+    weights = np.zeros(n_assets + 1, dtype=np.float32)
+    weights[-1] = 1.0
+    return weights
+
+
+def hold_action(current_weights: np.ndarray, valid: np.ndarray, config: PortfolioActionConfig) -> np.ndarray:
+    weights = np.asarray(current_weights, dtype=np.float32).copy()
+    weights[:-1] = np.where(valid, weights[:-1], 0.0)
+    if config.mode == "long_only":
+        weights[:-1] = np.clip(weights[:-1], 0.0, config.max_long_weight)
+        weights[-1] = max(1.0 - weights[:-1].sum(), 0.0)
+        total = weights.sum()
+        return weights / max(total, 1e-8)
+    gross = np.abs(weights[:-1]).sum()
+    if gross > config.max_gross_exposure:
+        weights[:-1] *= config.max_gross_exposure / gross
+    weights[-1] = max(1.0 - np.abs(weights[:-1]).sum(), 0.0)
+    return weights.astype(np.float32)
+
+
+def derisk_action(current_weights: np.ndarray, valid: np.ndarray, config: PortfolioActionConfig) -> np.ndarray:
+    weights = hold_action(current_weights, valid, config)
+    weights[:-1] *= float(np.clip(config.derisk_fraction, 0.0, 1.0))
+    weights[-1] = max(1.0 - np.abs(weights[:-1]).sum(), 0.0)
+    return weights.astype(np.float32)
+
+
+def equal_weight_action(valid: np.ndarray, n_assets: int, config: PortfolioActionConfig) -> np.ndarray:
+    weights = np.zeros(n_assets + 1, dtype=np.float32)
+    idx = np.where(valid)[0]
+    if len(idx) == 0:
+        weights[-1] = 1.0
+        return weights
+    if config.mode == "long_only":
+        weights[idx] = min(1.0 / len(idx), config.max_long_weight)
+        weights[-1] = max(1.0 - weights[:-1].sum(), 0.0)
+        return weights / max(weights.sum(), 1e-8)
+    weights[idx] = min(config.max_gross_exposure / len(idx), config.max_long_weight)
+    weights[-1] = max(1.0 - np.abs(weights[:-1]).sum(), 0.0)
+    return weights
+
+
+def volatility_target_action(
+    valid: np.ndarray,
+    sigma: np.ndarray,
+    n_assets: int,
+    config: PortfolioActionConfig,
+) -> np.ndarray:
+    weights = np.zeros(n_assets + 1, dtype=np.float32)
+    inv = np.where(valid, 1.0 / np.maximum(np.nan_to_num(sigma, nan=np.inf), 1e-6), 0.0)
+    if inv.sum() <= 0:
+        weights[-1] = 1.0
+        return weights
+    raw = inv / inv.sum()
+    if config.mode == "long_only":
+        weights[:-1] = np.minimum(raw, config.max_long_weight)
+        weights[-1] = max(1.0 - weights[:-1].sum(), 0.0)
+        return weights / max(weights.sum(), 1e-8)
+    weights[:-1] = np.minimum(raw * config.max_gross_exposure, config.max_long_weight)
+    weights[-1] = max(1.0 - np.abs(weights[:-1]).sum(), 0.0)
+    return weights.astype(np.float32)
+
+
+def v3_candidate_actions(
+    rng: np.random.Generator,
+    valid: np.ndarray,
+    sigma: np.ndarray,
+    current_weights: np.ndarray,
+    n_assets: int,
+    config: PortfolioActionConfig,
+    n_sampled_actions: int,
+) -> list[tuple[str, np.ndarray]]:
+    candidates: list[tuple[str, np.ndarray]] = [
+        ("hold", hold_action(current_weights, valid, config)),
+        ("cash", cash_action(n_assets)),
+        ("derisk", derisk_action(current_weights, valid, config)),
+        ("equal_weight", equal_weight_action(valid, n_assets, config)),
+        ("vol_target", volatility_target_action(valid, sigma, n_assets, config)),
+    ]
+    for i in range(n_sampled_actions):
+        candidates.append((f"sampled_{i}", _sample_weights(rng, valid, n_assets, config)))
+    return candidates
 
 
 def _portfolio_outcome(

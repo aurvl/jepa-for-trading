@@ -312,11 +312,12 @@ metrics + p-value:
 
 ## 9. Workflow Kaggle
 
-Le repo garde deux notebooks de cheminement :
+Le repo garde trois notebooks de cheminement :
 
 ```text
 notebooks/01_v1_runned_jepa_ppo_failure_analysis.ipynb
 notebooks/02_v2_world_model_planner.ipynb
+notebooks/03_v3_world_model_abstention_planner.ipynb
 ```
 
 Le notebook V1 documente le run exécuté et son échec. Le notebook V2 orchestre
@@ -591,3 +592,77 @@ encore l'objectif trading. La prochaine étape doit viser :
 4. comparaison systématique contre Equal Weight et Vol Target
 5. planner chunké et analyse des actions candidates
 ```
+
+## 14. V3 : abstention, cash et risk-off planning
+
+La V3 garde le principe central de la V2 : le market JEPA ne reçoit pas l'état
+du portefeuille, car ton portefeuille ne modifie pas le futur marché. En
+revanche, le portfolio world model reçoit bien l'état du portefeuille, l'action
+candidate et l'horizon, car ce sont eux qui déterminent les conséquences
+financières de l'action.
+
+Le changement principal est que le planner ne compare plus uniquement des
+actions random. A chaque décision, il voit toujours des actions défensives :
+
+```text
+candidate actions:
+    hold current weights
+    cash
+    de-risk current weights
+    equal weight
+    volatility target
+    sampled actions
+```
+
+La training loop V3 ajoute une loss de ranking :
+
+```text
+for each market window and horizon:
+    evaluate candidate actions with realized future returns
+    compute realized utility for each action
+    label best action
+
+model learns:
+    JEPA future latent
+    portfolio outcomes for all candidates
+    energy / utility for all candidates
+    policy distillation toward best action
+    ranking margin: best candidate score > alternatives
+```
+
+Schéma V3 :
+
+```mermaid
+flowchart TD
+    A[Market history window] --> B[Market JEPA]
+    B --> Z[z_market_t and z_market_hat_t_plus_H]
+    P[Current portfolio state] --> C[Candidate action set]
+    M[Tradable mask + sigma] --> C
+    C --> D[hold / cash / derisk / equal / vol target / sampled]
+    Z --> E[Portfolio world model]
+    P --> E
+    D --> E
+    H[Horizon] --> E
+    E --> O[Predicted outcome]
+    O --> U[Energy / utility score]
+    U --> R[Ranking vs hold/cash/de-risk]
+    R --> X[Execute only if advantage clears margin]
+```
+
+Au backtest, la règle d'exécution devient :
+
+```text
+best = argmax(score - turnover_penalty)
+
+if best_score <= hold_score + no_trade_margin:
+    execute hold
+elif predicted_drawdown is too bad:
+    execute cash or de-risk if comparable
+else:
+    execute best
+```
+
+L'objectif n'est pas de garantir une performance positive. L'objectif V3 est de
+corriger un défaut précis de V2 : l'agent trade trop souvent, paie trop de
+frais, et ne possède pas assez de mécanisme pour rester cash/risk-off quand le
+marché devient défavorable.

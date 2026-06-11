@@ -75,6 +75,7 @@ portfolio:
   borrow_cost_bps: 2.0
   max_turnover: 0.40
   long_only: true
+  derisk_fraction: 0.50
 
 ppo:
   rollout_steps: 252
@@ -104,3 +105,21 @@ v2:
     outcome: 1.0
     energy: 0.5
     policy: 0.25
+
+v3:
+  world_max_steps: 3000
+  world_warmup_steps: 500
+  n_sampled_actions: 4
+  planner_sampled_actions: 96
+  no_trade_margin: 0.002
+  cash_margin: 0.001
+  rank_margin: 0.05
+  turnover_energy_penalty: 0.20
+  risk_off_drawdown_threshold: -0.03
+  loss_weights:
+    jepa: 1.0
+    vicreg: 0.05
+    outcome: 1.0
+    energy: 0.5
+    policy: 0.25
+    rank: 0.5
