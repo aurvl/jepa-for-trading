@@ -474,6 +474,31 @@ for action in candidate_actions:
 execute argmax(score)
 ```
 
+Point numérique critique : les features du modèle peuvent être scalées, mais
+les outcomes financiers et la simulation de portefeuille doivent utiliser les
+rendements bruts. Utiliser un `log_return` robust-scalé dans `exp()` ou dans
+une composition de portefeuille peut créer des overflows massifs. La V2 garde
+donc :
+
+```text
+features model:
+    log_return scaled, sigma_log scaled, macro scaled
+
+portfolio outcomes:
+    log_return_raw, sigma_raw, close_raw
+```
+
+Les outcomes V2 sont calculés en log-domain, puis bornés :
+
+```text
+portfolio_log_return: clipped
+drawdown: [-1, 0]
+volatility: [0, 5]
+turnover: [0, 3]
+cost: [0, 1]
+utility: [-3, 3]
+```
+
 Les modes portfolio sont configurables :
 
 ```yaml

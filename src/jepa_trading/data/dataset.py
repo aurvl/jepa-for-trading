@@ -38,9 +38,9 @@ def build_market_arrays(df: pd.DataFrame, feature_columns: list[str]) -> MarketA
         j = ticker_index[getattr(row, "ticker")]
         for k, col in enumerate(feature_columns):
             features[i, j, k] = getattr(row, col, np.nan)
-        log_returns[i, j] = getattr(row, "log_return", np.nan)
-        sigma[i, j] = getattr(row, "sigma", np.nan)
-        close[i, j] = getattr(row, "close", np.nan)
+        log_returns[i, j] = getattr(row, "log_return_raw", getattr(row, "log_return", np.nan))
+        sigma[i, j] = getattr(row, "sigma_raw", getattr(row, "sigma", np.nan))
+        close[i, j] = getattr(row, "close_raw", getattr(row, "close", np.nan))
         tradable[i, j] = bool(getattr(row, "tradable", False))
 
     return MarketArrays(dates, tickers, features, log_returns, sigma, close, tradable, feature_columns)
@@ -104,4 +104,3 @@ class MultiAssetJEPADataset(Dataset):
             "future_sigma": torch.tensor(realized_vol, dtype=torch.float32),
             "future_drawdown": torch.tensor(max_drawdown.min(axis=0), dtype=torch.float32),
         }
-

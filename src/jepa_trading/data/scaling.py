@@ -44,6 +44,12 @@ class MarketScaler:
 
 def prepare_scaling_columns(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
+    if "log_return" in out.columns and "log_return_raw" not in out.columns:
+        out["log_return_raw"] = out["log_return"]
+    if "sigma" in out.columns and "sigma_raw" not in out.columns:
+        out["sigma_raw"] = out["sigma"]
+    if "close" in out.columns and "close_raw" not in out.columns:
+        out["close_raw"] = out["close"]
     out["sigma_log"] = np.log(out["sigma"].clip(lower=1e-8))
     return out
 
@@ -57,4 +63,3 @@ def fit_transform_train_only(
     train = prepared[prepared["split"] == train_split]
     scaler = MarketScaler(robust_columns=feature_columns).fit(train)
     return scaler.transform(prepared), scaler
-

@@ -21,6 +21,9 @@ class PortfolioActionConfig:
     max_net_exposure: float = 1.0
     borrow_cost_bps: float = 2.0
     n_action_samples: int = 4
+    max_abs_daily_log_return: float = 0.35
+    max_daily_gross: float = 2.0
+    min_daily_gross: float = 0.05
 
 
 def _normalize_long_only(weights: np.ndarray, valid: np.ndarray, max_weight: float) -> np.ndarray:
@@ -97,23 +100,54 @@ def _portfolio_outcome(
     turnover = float(np.abs(action_weights - current_weights).sum())
     cost = turnover * config.transaction_cost_bps / 10000.0
     borrow = float(np.abs(np.minimum(action_weights[:-1], 0.0)).sum() * config.borrow_cost_bps / 10000.0)
-    daily_gross = action_weights[-1] + (action_weights[:-1] * np.exp(future_log_returns)).sum(axis=1)
-    daily_gross = np.clip(daily_gross, 1e-6, None)
-    equity_path = np.cumprod(daily_gross) * max(1.0 - cost - borrow, 1e-6)
-    drawdown = equity_path / np.maximum.accumulate(equity_path) - 1.0
-    log_return = float(np.log(equity_path[-1]))
-    realized_vol = float(np.std(np.diff(np.log(np.concatenate([[1.0], equity_path])))) * np.sqrt(252))
+
+    safe_log_returns = np.nan_to_num(future_log_returns, nan=0.0, posinf=0.0, neginf=0.0)
+    safe_log_returns = np.clip(
+        safe_log_returns,
+        -config.max_abs_daily_log_return,
+        config.max_abs_daily_log_return,
+    )
+    simple_returns = np.expm1(safe_log_returns)
+    portfolio_simple_returns = simple_returns @ action_weights[:-1]
+    daily_gross = np.clip(
+        1.0 + portfolio_simple_returns,
+        config.min_daily_gross,
+        config.max_daily_gross,
+    )
+    daily_log_returns = np.log(daily_gross)
+    log_cost = np.log(max(1.0 - cost - borrow, 1e-6))
+    log_equity_path = np.cumsum(daily_log_returns) + log_cost
+    equity_path = np.exp(np.clip(log_equity_path, -20.0, 20.0))
+    running_max = np.maximum.accumulate(equity_path)
+    drawdown = equity_path / np.maximum(running_max, 1e-12) - 1.0
+    log_return = float(np.clip(log_equity_path[-1], -2.0, 2.0))
+    realized_vol = float(np.clip(np.std(daily_log_returns) * np.sqrt(252), 0.0, 5.0))
     concentration = float(np.sum(action_weights[:-1] ** 2))
-    downside = float(np.minimum(drawdown.min(), 0.0))
+    downside = float(np.clip(np.minimum(drawdown.min(), 0.0), -1.0, 0.0))
     utility = log_return - 0.5 * abs(downside) - 0.05 * turnover - 0.02 * concentration - cost - borrow
-    return {
+    utility = float(np.clip(utility, -3.0, 3.0))
+    future_log_equity = float(np.clip(log_equity_path[-1], -3.0, 3.0))
+    outcome = {
         "portfolio_log_return": log_return,
         "portfolio_drawdown": downside,
         "portfolio_vol": realized_vol,
-        "portfolio_turnover": turnover,
-        "portfolio_cost": cost + borrow,
+        "portfolio_turnover": float(np.clip(turnover, 0.0, 3.0)),
+        "portfolio_cost": float(np.clip(cost + borrow, 0.0, 1.0)),
         "portfolio_utility": utility,
-        "future_equity_ratio": float(equity_path[-1]),
+        "future_equity_ratio": future_log_equity,
+    }
+    if not np.isfinite(np.array(list(outcome.values()), dtype=np.float64)).all():
+        return {
+            "portfolio_log_return": 0.0,
+            "portfolio_drawdown": 0.0,
+            "portfolio_vol": 0.0,
+            "portfolio_turnover": float(np.clip(turnover, 0.0, 3.0)),
+            "portfolio_cost": float(np.clip(cost + borrow, 0.0, 1.0)),
+            "portfolio_utility": -1.0,
+            "future_equity_ratio": 0.0,
+        }
+    return {
+        **outcome,
     }
 
 
@@ -188,6 +222,7 @@ class V2WorldModelDataset(Dataset):
             ],
             dtype=np.float32,
         )
+        outcome_vec = np.nan_to_num(outcome_vec, nan=0.0, posinf=0.0, neginf=0.0)
 
         return {
             "context": torch.tensor(x, dtype=torch.float32),
@@ -201,4 +236,17 @@ class V2WorldModelDataset(Dataset):
             "outcome": torch.tensor(outcome_vec, dtype=torch.float32),
             "utility": torch.tensor(outcome["portfolio_utility"], dtype=torch.float32),
         }
+
+
+def summarize_v2_batch(batch: dict[str, torch.Tensor]) -> dict[str, float | bool]:
+    outcome = batch["outcome"].detach().cpu()
+    utility = batch["utility"].detach().cpu()
+    return {
+        "outcome_finite": bool(torch.isfinite(outcome).all().item()),
+        "utility_finite": bool(torch.isfinite(utility).all().item()),
+        "outcome_min": float(outcome.min().item()),
+        "outcome_max": float(outcome.max().item()),
+        "utility_min": float(utility.min().item()),
+        "utility_max": float(utility.max().item()),
+    }
 

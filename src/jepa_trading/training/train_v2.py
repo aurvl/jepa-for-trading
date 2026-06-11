@@ -105,6 +105,17 @@ def train_v2_world_model(
         optimizer.zero_grad(set_to_none=True)
         outputs = model(batch)
         losses = v2_world_model_loss(outputs, batch, step, warmup_steps, weights)
+        if not torch.isfinite(losses["loss"]):
+            diagnostics = {k: float(v.detach().cpu().item()) for k, v in losses.items()}
+            outcome_min = float(batch["outcome"].detach().cpu().min().item())
+            outcome_max = float(batch["outcome"].detach().cpu().max().item())
+            utility_min = float(batch["utility"].detach().cpu().min().item())
+            utility_max = float(batch["utility"].detach().cpu().max().item())
+            raise FloatingPointError(
+                "Non-finite V2 loss detected. "
+                f"losses={diagnostics}, outcome_range=({outcome_min}, {outcome_max}), "
+                f"utility_range=({utility_min}, {utility_max})"
+            )
         losses["loss"].backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()

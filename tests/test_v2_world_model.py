@@ -8,7 +8,12 @@ from jepa_trading.data.dataset import build_market_arrays
 from jepa_trading.data.features import add_asset_features, infer_feature_columns
 from jepa_trading.data.scaling import fit_transform_train_only
 from jepa_trading.data.splits import add_time_split
-from jepa_trading.data.v2_dataset import PortfolioActionConfig, V2WorldModelDataset
+from jepa_trading.data.v2_dataset import (
+    PortfolioActionConfig,
+    V2WorldModelDataset,
+    _portfolio_outcome,
+    summarize_v2_batch,
+)
 from jepa_trading.models.world_model_v2 import V2WorldModel
 from jepa_trading.planning.v2_planner import V2ImaginationPlanner
 from jepa_trading.training.train_v2 import v2_world_model_loss
@@ -87,4 +92,28 @@ def test_v2_forward_loss_and_planner():
     assert result.action.shape[0] == len(arrays.tickers) + 1
     assert result.horizon in [5, 10]
     assert np.isfinite(result.score)
+
+
+def test_v2_portfolio_outcome_is_stable_under_extreme_returns():
+    cfg = PortfolioActionConfig(max_long_weight=0.4)
+    future_returns = np.full((60, 4), 50.0, dtype=np.float32)
+    current = np.array([0.2, 0.2, 0.0, 0.0, 0.6], dtype=np.float32)
+    action = np.array([0.3, 0.1, 0.0, 0.0, 0.6], dtype=np.float32)
+    outcome = _portfolio_outcome(future_returns, current, action, cfg)
+    vals = np.array(list(outcome.values()), dtype=np.float64)
+    assert np.isfinite(vals).all()
+    assert -3.0 <= outcome["portfolio_utility"] <= 3.0
+    assert -3.0 <= outcome["future_equity_ratio"] <= 3.0
+
+
+def test_v2_batch_outcomes_are_finite():
+    arrays, _ = _synthetic_arrays()
+    action_cfg = PortfolioActionConfig(n_action_samples=2, max_long_weight=0.4)
+    ds = V2WorldModelDataset(arrays, arrays.dates[:120], 30, [5, 10], action_cfg)
+    batch = next(iter(torch.utils.data.DataLoader(ds, batch_size=8)))
+    summary = summarize_v2_batch(batch)
+    assert summary["outcome_finite"]
+    assert summary["utility_finite"]
+    assert summary["outcome_max"] <= 5.0
+    assert summary["outcome_min"] >= -3.0
 
