@@ -111,11 +111,13 @@ v3:
   world_warmup_steps: 500
   n_sampled_actions: 4
   planner_sampled_actions: 96
-  no_trade_margin: 0.002
-  cash_margin: 0.001
+  no_trade_margin: 0.0
+  cash_margin: 0.0
   rank_margin: 0.05
-  turnover_energy_penalty: 0.20
-  risk_off_drawdown_threshold: -0.03
+  turnover_energy_penalty: 0.02
+  risk_off_drawdown_threshold: -0.08
+  risk_on_bootstrap_tolerance: 0.03
+  min_risk_on_log_return: -0.02
   loss_weights:
     jepa: 1.0
     vicreg: 0.05

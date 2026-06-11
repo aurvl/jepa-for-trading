@@ -32,8 +32,10 @@ class V3AbstentionPlanner:
         n_sampled_actions: int = 96,
         no_trade_margin: float = 0.002,
         cash_margin: float = 0.001,
-        turnover_energy_penalty: float = 0.20,
-        risk_off_drawdown_threshold: float = -0.03,
+        turnover_energy_penalty: float = 0.02,
+        risk_off_drawdown_threshold: float = -0.08,
+        risk_on_bootstrap_tolerance: float = 0.03,
+        min_risk_on_log_return: float = -0.02,
         chunk_size: int = 256,
         device: torch.device | str = "cpu",
         seed: int = 42,
@@ -46,6 +48,8 @@ class V3AbstentionPlanner:
         self.cash_margin = cash_margin
         self.turnover_energy_penalty = turnover_energy_penalty
         self.risk_off_drawdown_threshold = risk_off_drawdown_threshold
+        self.risk_on_bootstrap_tolerance = risk_on_bootstrap_tolerance
+        self.min_risk_on_log_return = min_risk_on_log_return
         self.chunk_size = chunk_size
         self.device = torch.device(device)
         self.rng = np.random.default_rng(seed)
@@ -109,10 +113,23 @@ class V3AbstentionPlanner:
         hold_idx = self._best_named_idx(scores, names, "hold")
         cash_idx = self._best_named_idx(scores, names, "cash")
         derisk_idx = self._best_named_idx(scores, names, "derisk")
+        best_risk_idx = self._best_risk_idx(scores, names)
         selected_idx = best_idx
         risk_off = bool(outcome_np[best_idx, 1] <= self.risk_off_drawdown_threshold)
+        is_all_cash = bool(current_weights[-1] >= 0.98 and np.abs(current_weights[:-1]).sum() <= 0.02)
 
-        if scores[best_idx] <= scores[hold_idx] + self.no_trade_margin:
+        # If we start from cash, a pure turnover penalty can trap the planner in
+        # "hold cash forever". Allow a risk-on candidate when it is close to
+        # hold/cash and its imagined drawdown is not risk-off.
+        if is_all_cash and names[best_risk_idx] not in {"hold", "cash", "derisk"}:
+            risk_candidate_ok = (
+                scores[best_risk_idx] >= scores[hold_idx] - self.risk_on_bootstrap_tolerance
+                and outcome_np[best_risk_idx, 1] > self.risk_off_drawdown_threshold
+                and outcome_np[best_risk_idx, 0] >= self.min_risk_on_log_return
+            )
+            if risk_candidate_ok:
+                selected_idx = best_risk_idx
+        if selected_idx == best_idx and scores[best_idx] <= scores[hold_idx] + self.no_trade_margin:
             selected_idx = hold_idx
         elif risk_off:
             defensive_idx = cash_idx if scores[cash_idx] >= scores[derisk_idx] + self.cash_margin else derisk_idx
@@ -135,6 +152,15 @@ class V3AbstentionPlanner:
     @staticmethod
     def _best_named_idx(scores: np.ndarray, names: list[str], name: str) -> int:
         idx = [i for i, candidate_name in enumerate(names) if candidate_name == name]
+        if not idx:
+            return int(np.argmax(scores))
+        local = int(np.argmax(scores[idx]))
+        return idx[local]
+
+    @staticmethod
+    def _best_risk_idx(scores: np.ndarray, names: list[str]) -> int:
+        defensive = {"hold", "cash", "derisk"}
+        idx = [i for i, candidate_name in enumerate(names) if candidate_name not in defensive]
         if not idx:
             return int(np.argmax(scores))
         local = int(np.argmax(scores[idx]))
