@@ -515,3 +515,79 @@ portfolio:
   max_gross_exposure: 1.0
   max_net_exposure: 1.0
 ```
+
+## 13. Résultat V2 runné
+
+Le notebook exécuté `02_v2_world_model_planner.ipynb` montre que la V2 corrige
+le problème principal de la V1 : le backtest est numériquement valide. Les
+garde-fous indiquent :
+
+```text
+valid_backtest=True for:
+    V2 JEPA Planner
+    Buy & Hold
+    Equal Weight
+    Momentum
+    Vol Target
+```
+
+Résultats test-period :
+
+```text
+Buy & Hold:
+    total_return: 0.171
+    CAGR: 0.047
+    Sharpe: 1.832
+    max_drawdown: -0.034
+    total_cost: 0.20
+
+Equal Weight:
+    total_return: 1.144
+    CAGR: 0.250
+    Sharpe: 1.828
+    max_drawdown: -0.161
+    total_cost: 1.00
+
+V2 JEPA Planner:
+    total_return: 0.843
+    CAGR: 0.196
+    Sharpe: 1.520
+    max_drawdown: -0.146
+    avg_turnover: 0.400
+    total_cost: 242.87
+```
+
+Tests statistiques :
+
+```text
+randomization test:
+    p_value_random_beats_agent = 0.26
+
+bootstrap vs Buy & Hold:
+    mean_daily_excess_return = 0.0005566
+    bootstrap_p_value_leq_zero = 0.003
+```
+
+Interprétation :
+
+- La V2 est un run valide, contrairement à la V1.
+- Le planner bat Buy & Hold en total return et en excess return bootstrap.
+- La V2 ne bat pas Equal Weight, qui reste la meilleure baseline simple sur ce
+  run.
+- Le randomization test n'est pas suffisamment fort : 26% des stratégies
+  random contraintes battent l'agent.
+- Le planner sature le turnover max (`0.40`) presque tous les jours, ce qui
+  crée des coûts très élevés.
+- Les dernières décisions visibles utilisent l'horizon `5`, ce qui suggère un
+  possible collapse vers le court terme.
+
+Conclusion : la V2 réussit l'objectif architectural et numérique, mais pas
+encore l'objectif trading. La prochaine étape doit viser :
+
+```text
+1. energy model plus sensible aux coûts et au turnover
+2. pénalité d'action smoothing / changement de poids
+3. diversification réelle des horizons
+4. comparaison systématique contre Equal Weight et Vol Target
+5. planner chunké et analyse des actions candidates
+```

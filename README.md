@@ -72,6 +72,27 @@ V2 adds:
 - energy/utility scoring;
 - imagination planner over candidate actions and horizons.
 
+## V2 Result
+
+The executed V2 notebook is valid: no `NaN`/`inf` backtest failure was detected.
+It fixes the V1 numerical failure, but it is not yet a robust winning trading
+strategy.
+
+Key test-period results:
+
+- V2 JEPA Planner total return: `0.843`, Sharpe: `1.520`, max drawdown:
+  `-0.146`;
+- Buy & Hold total return: `0.171`, Sharpe: `1.832`, max drawdown: `-0.034`;
+- Equal Weight total return: `1.144`, Sharpe: `1.828`, max drawdown: `-0.161`;
+- randomization test: `p_value_random_beats_agent = 0.26`;
+- bootstrap vs Buy & Hold: `p = 0.003`.
+
+Interpretation: V2 is a valid world-model/planner baseline and beats Buy &
+Hold on total return, but it does not beat the strongest simple baselines.
+The planner saturates the turnover constraint (`avg_turnover = 0.40`) and pays
+high transaction costs. Next work should focus on turnover-aware energy,
+action smoothness, and horizon diversification.
+
 ## Kaggle
 
 Use V1:
