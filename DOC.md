@@ -3,6 +3,23 @@
 Ce document explique l'architecture de `jepa-for-trading`, le rôle de chaque
 bloc, et le processus complet depuis les données jusqu'au backtest final.
 
+## 0. Vue rapide en schéma
+
+![System overview](assets/system_overview.png)
+
+```mermaid
+flowchart LR
+    A[yfinance OHLCV multi-assets] --> C[Feature engineering]
+    B[Macro data parquet/csv] --> C
+    C --> D[70-day windows]
+    D --> E[Market JEPA]
+    E --> F[Market heads]
+    F --> G[PPO portfolio policy]
+    G --> H[Trading environment]
+    H --> I[Backtest and statistical evaluation]
+    H --> G
+```
+
 ## 1. Idée générale
 
 Le projet construit un agent de trading multi-assets basé sur deux idées :
@@ -48,6 +65,28 @@ Les splits sont temporels :
 
 Les scalers sont fit uniquement sur train pour éviter le leakage.
 
+```text
+raw prices + macro
+        |
+        v
+date/ticker panel
+        |
+        v
+per-asset features:
+    log_return, gaps, range, volume_z, RSI, MACD, realized vol, sigma
+        |
+        v
+train-only scaling + chronological split
+        |
+        v
+MarketArrays:
+    dates x assets x features
+    log_returns
+    sigma
+    close
+    tradable_mask
+```
+
 ## 3. Dataset multi-assets
 
 Le dataset transforme le marché en fenêtres daily de 70 jours. Chaque sample
@@ -66,9 +105,22 @@ La convention tensor principale est :
 batch x assets x time x features
 ```
 
+```mermaid
+flowchart TD
+    A[Global calendar date t] --> B[Context window t-69 ... t]
+    A --> C[Choose horizon H]
+    C --> D[Target window t+H-69 ... t+H]
+    B --> E[context tensor]
+    D --> F[target tensor]
+    A --> G[tradable_mask at t]
+    C --> H[future return, sigma, drawdown targets]
+```
+
 ## 4. Modèle JEPA de marché
 
 Le JEPA est composé de trois blocs :
+
+![JEPA training flow](assets/jepa_training_flow.png)
 
 ```text
 online_encoder(context) -> z_context
@@ -93,6 +145,20 @@ non disponibles.
 Le JEPA ne reconstruit pas les prix. Il apprend une représentation latente du
 futur marché, plus proche de l'esprit I-JEPA/V-JEPA que d'un autoencoder
 classique.
+
+```mermaid
+flowchart LR
+    C[Context window] --> OE[Online encoder]
+    OE --> ZC[z_context]
+    H[Horizon embedding] --> P[Predictor]
+    ZC --> P
+    P --> ZH[z_future_hat]
+    T[Future target window] --> TE[Target encoder EMA]
+    TE --> ZT[z_future]
+    ZH --> L[Latent JEPA loss]
+    ZT --> L
+    OE -. EMA update .-> TE
+```
 
 ## 5. Market heads
 
@@ -143,6 +209,8 @@ L'agent est une policy PPO qui produit directement des target weights. Il ne
 choisit pas un simple `buy/sell/hold` discret, car cela scale mal avec un
 portefeuille de dizaines d'actifs.
 
+![PPO control loop](assets/ppo_control_loop.png)
+
 Observation de l'agent :
 
 - latents JEPA;
@@ -170,6 +238,20 @@ reward =
 
 Cette reward force l'agent à apprendre une gestion de portefeuille, pas
 seulement une maximisation brute du PnL.
+
+```mermaid
+flowchart TD
+    A[JEPA latents + market heads] --> O[Agent observation]
+    B[Portfolio state] --> O
+    O --> P[PPO policy]
+    P --> W[Target weights + cash]
+    W --> C[Constraints: long-only, tradable mask, max weight]
+    C --> E[Portfolio environment]
+    E --> R[Risk-adjusted reward]
+    R --> P
+    E --> S[Next portfolio state]
+    S --> O
+```
 
 ## 8. Evaluation
 
@@ -212,6 +294,21 @@ p_value = proportion des stratégies random qui battent l'agent
 
 Une p-value faible indique que la performance de l'agent est difficile à
 expliquer par un comportement random sous les mêmes contraintes.
+
+```text
+test period only
+      |
+      +--> JEPA-PPO agent equity
+      +--> Buy & Hold equity
+      +--> Equal Weight equity
+      +--> Momentum equity
+      +--> Vol Target equity
+      +--> 100 random constrained strategies
+              |
+              v
+metrics + p-value:
+    P(random_total_return >= agent_total_return)
+```
 
 ## 9. Workflow Kaggle
 
@@ -256,4 +353,3 @@ La direction naturelle pour V2 est :
 - walk-forward validation;
 - policy distillation depuis un planner JEPA;
 - contraintes de portefeuille plus institutionnelles.
-
