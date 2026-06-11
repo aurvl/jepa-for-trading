@@ -28,6 +28,21 @@ The action does not pretend to move the market. Market latents are predicted
 from market context; actions only affect portfolio exposure, costs, PnL,
 turnover and drawdown.
 
+## V1 Result
+
+The executed V1 notebook is kept as a baseline/failure record, not as a
+successful strategy. The data pipeline ran and the JEPA latent loss decreased,
+but the downstream decision stack became numerically invalid:
+
+- final JEPA train loss was around `0.011`, with validation around `0.049`;
+- market-head validation loss was around `106`, far above train loss;
+- PPO produced `NaN` reward/loss/equity;
+- backtest metrics contained `NaN`/`inf`, so the positive statistical
+  interpretation printed by the notebook is invalid.
+
+This motivates V2: unified world-model training with VICReg,
+action-conditioned portfolio outcomes, and planner-first decisions.
+
 ## Local Setup
 
 ```bash
@@ -62,13 +77,13 @@ V2 adds:
 Use V1:
 
 ```text
-notebooks/01_kaggle_v1_jepa_ppo.ipynb
+notebooks/01_v1_runned_jepa_ppo_failure_analysis.ipynb
 ```
 
 Use V2:
 
 ```text
-notebooks/02_kaggle_v2_world_model_planner.ipynb
+notebooks/02_v2_world_model_planner.ipynb
 ```
 
 Upload `macro_data.parquet` as a Kaggle dataset. The notebook auto-discovers it

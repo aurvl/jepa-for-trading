@@ -13,6 +13,8 @@ from jepa_trading.models.jepa import MarketJEPA
 from jepa_trading.models.policy import PortfolioPolicy
 from jepa_trading.rl.env import TradingEnv
 from jepa_trading.rl.observer import RawMarketObserver
+from jepa_trading.evaluation.metrics import equity_metrics, validate_backtest_history
+from jepa_trading.evaluation.statistical_tests import randomization_p_value
 
 
 def _synthetic_prices() -> pd.DataFrame:
@@ -90,3 +92,12 @@ def test_policy_env_step_keeps_weights_valid():
     assert np.all(env.state.weights[:-1] <= 0.4001)
     assert next_obs.shape == obs.shape
 
+
+def test_invalid_backtest_is_not_interpretable():
+    bad = pd.DataFrame({"equity": [1000.0, np.nan, 1200.0], "cost": [0.0, 0.0, np.inf]})
+    valid = validate_backtest_history(bad, "bad")
+    metrics = equity_metrics(bad)
+    test = randomization_p_value(bad, [bad])
+    assert valid["valid_backtest"] is False
+    assert metrics["valid_backtest"] is False
+    assert test["valid_test"] is False
