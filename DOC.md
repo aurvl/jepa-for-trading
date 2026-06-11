@@ -334,7 +334,52 @@ vers GitHub après entraînement. Elle utilise :
 - `git add -f` pour les dossiers d'artefacts ignorés par défaut;
 - commit et push vers `version1`.
 
-## 10. Limites de la V1
+## 10. Résultat V1 runné
+
+Le notebook exécuté `01_v1_runned_jepa_ppo_failure_analysis.ipynb` documente
+un échec utile de la V1. La préparation des données fonctionne correctement :
+
+```text
+rows: 165325
+assets: 31
+features: 29
+train samples: 18530
+val samples: 3780
+test samples: 4010
+```
+
+Le JEPA apprend un latent, mais généralise imparfaitement :
+
+```text
+final train_loss ~= 0.011
+final val_loss   ~= 0.049
+```
+
+Les heads financiers échouent beaucoup plus clairement :
+
+```text
+final train loss ~= 7.13
+final val loss   ~= 106.53
+```
+
+Le PPO diverge ensuite :
+
+```text
+rollout loss: NaN
+rollout reward: NaN
+equity: NaN
+```
+
+Les métriques de backtest contiennent des `NaN` et des `inf`, notamment sur
+les returns, coûts et equity curves. Le test statistique imprimé dans le
+notebook ne doit donc pas être interprété comme une réussite. Toute
+interprétation positive est invalide dès qu'une métrique clé est non finie.
+
+Conclusion : la V1 est une baseline d'échec/inconclusive. Elle justifie la V2,
+où le modèle apprend en une boucle unifiée un world model JEPA régularisé par
+VICReg, un portfolio outcome model action-conditioned et un planner.
+
+## 11. Limites de la V1
 
 Cette V1 est une architecture complète mais reste une base de recherche :
 
