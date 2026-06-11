@@ -28,8 +28,10 @@ This repository keeps the experimental path explicit:
 - `version1`: JEPA representation learning + market heads + PPO policy.
 - `version2`: unified JEPA world model + VICReg + action-conditioned portfolio
   imagination + MLP planner policy.
+- `version3`: V2 plus abstention/risk-off planning with hold, cash and
+  de-risk candidates trained by a ranking objective.
 
-The current branch implements V2 while keeping V1 notebooks executable.
+The current branch implements V3 while keeping V1 and V2 notebooks executable.
 
 V1 includes:
 
@@ -92,6 +94,48 @@ V2 adds:
 - energy/utility scoring;
 - imagination planner over candidate actions and horizons.
 
+## V2 Result
+
+The executed V2 notebook is valid: no `NaN`/`inf` backtest failure was detected.
+It fixes the V1 numerical failure, but it is not yet a robust winning trading
+strategy.
+
+Key test-period results:
+
+- V2 JEPA Planner total return: `0.843`, Sharpe: `1.520`, max drawdown:
+  `-0.146`;
+- Buy & Hold total return: `0.171`, Sharpe: `1.832`, max drawdown: `-0.034`;
+- Equal Weight total return: `1.144`, Sharpe: `1.828`, max drawdown: `-0.161`;
+- randomization test: `p_value_random_beats_agent = 0.26`;
+- bootstrap vs Buy & Hold: `p = 0.003`.
+
+Interpretation: V2 is a valid world-model/planner baseline and beats Buy &
+Hold on total return, but it does not beat the strongest simple baselines.
+The planner saturates the turnover constraint (`avg_turnover = 0.40`) and pays
+high transaction costs. Next work should focus on turnover-aware energy,
+action smoothness, and horizon diversification.
+
+## V3 Direction
+
+V3 targets the main V2 trading failure: the planner knows how to choose an
+allocation, but it does not know strongly enough when to avoid trading. The
+new dataset builds, for every market window and horizon, a candidate set that
+always includes:
+
+- hold current portfolio;
+- move to cash;
+- de-risk existing exposure;
+- equal weight;
+- volatility target;
+- sampled portfolio actions.
+
+The world model is still trained in one loop, but now also learns to rank
+candidates by realized future utility. At inference, the planner compares the
+best imagined trade against hold/cash/de-risk and refuses to trade unless the
+score advantage clears a margin. This is meant to reduce forced trading during
+bad regimes, lower turnover, and make cash a real action rather than a passive
+leftover weight.
+
 ## Kaggle
 
 Use V1:
@@ -104,6 +148,12 @@ Use V2:
 
 ```text
 notebooks/02_v2_world_model_planner.ipynb
+```
+
+Use V3:
+
+```text
+notebooks/03_v3_world_model_abstention_planner.ipynb
 ```
 
 Upload `macro_data.parquet` as a Kaggle dataset. The notebook auto-discovers it
