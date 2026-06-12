@@ -841,48 +841,53 @@ mais la decision portfolio n'est pas alignee avec le backtest.
 5. Le scoring final combine energy, return, drawdown, volatilite et turnover
    avec des poids manuels non calibres sur validation.
 
-### Probleme conceptuel : pas encore un vrai planner JEPA goal-conditioned
+### Probleme conceptuel : pas encore un vrai world model action-conditioned
 
 Les versions V1-V4 sont inspirees JEPA, mais elles ne sont pas encore un vrai
-systeme de planning JEPA au sens fort, car aucun goal explicite n'est donne au
-modele. Le planner choisit surtout le meilleur score local parmi des actions :
+systeme de world model action-conditioned au sens fort. Le planner choisit
+surtout le meilleur score local parmi des actions, mais le predictor latent ne
+modele pas encore proprement les consequences de l'action sur l'etat du
+portefeuille :
 
 ```text
 market history
     -> latent JEPA
     -> outcome model
-    -> score local
+    -> score local / regle ad hoc
     -> action
 ```
 
-Un vrai world model goal-conditioned devrait plutot suivre :
+Un vrai world model action-conditioned devrait plutot suivre :
 
 ```text
-current state s_t
-goal g
-candidate action sequence a_t:t+H
-world model predicts future latent/outcome
-energy measures distance(predicted_future, goal)
-planner chooses action sequence minimizing energy
+encoder_online(state_t) -> z_t
+predictor(z_t, action_sequence, horizon) -> z_hat_t+H
+encoder_EMA(real_future_state_t+H) -> z_target_t+H
+loss = distance(z_hat_t+H, z_target_t+H)
 ```
 
-Pour le trading, le goal doit etre explicite, par exemple :
+Dans le trading, l'action ne doit pas pretendre modifier le futur marche. Elle
+conditionne surtout les consequences portefeuille :
 
 ```text
-goal =
-    target_return_horizon
-    max_drawdown
-    max_volatility
-    turnover_budget
-    cost_budget
-    horizon
+portfolio_state
+action / target weights
+horizon
+market latent
+    -> future portfolio latent
+    -> return, drawdown, volatility, cost, turnover
 ```
 
-La prochaine version ne doit donc pas ajouter une regle `risk-off` de plus. Elle
-doit repartir d'un objectif plus propre :
+L'objectif de rendement-risque, par exemple `10% CAGR avec drawdown controle`,
+n'est pas le conditionnement principal du JEPA. Il appartient au module de
+cout/energie utilise par le planner pour evaluer les consequences predites des
+actions.
+
+La prochaine version ne doit donc pas ajouter une regle `risk-off` de plus.
+Elle doit repartir d'un objectif plus propre :
 
 ```text
-V5 = Goal-Conditioned World Model Planner
+V5 = Action-Conditioned JEPA World Model Planner
 ```
 
 ### Recommandations finales
@@ -894,7 +899,84 @@ V5 = Goal-Conditioned World Model Planner
 3. Pour V4, si on continue, utiliser plutot `v4_world_model.pt` que
    `v4_world_model_run2.pt`, car la validation loss est meilleure.
 4. Pour la suite, retirer PPO et les regles ad hoc du coeur methodologique.
-5. Construire V5 autour de `goal -> imagination -> energy -> planning`.
+5. Construire V5 autour de `state + action -> imagined future -> cost/energy -> planning`.
 6. Ajouter des validations bloquantes : strategie 100% cash, zero trade,
    exposition trop basse ou action diversity trop faible doivent rendre le
    backtest invalide.
+
+## 17. V5 : action-conditioned JEPA world model
+
+La V5 repart du principe suivant :
+
+```text
+Le marche evolue independamment de nos actions.
+Le portefeuille, lui, evolue en fonction de nos actions.
+```
+
+Le JEPA de marche encode et predit le latent de marche :
+
+```text
+market_window_t -> encoder_online -> z_market_t
+market_window_t+H -> encoder_EMA -> z_market_t+H
+predictor_market(z_market_t, H) -> z_market_hat_t+H
+```
+
+Le world model action-conditioned predit ensuite l'etat futur du portefeuille :
+
+```text
+z_market_t
+z_market_hat_t+H
+portfolio_state_t
+candidate_action
+horizon
+cost_context
+    -> z_portfolio_hat_t+H
+    -> predicted outcomes
+    -> predicted goal/cost
+```
+
+Le target latent portefeuille est encode depuis l'etat futur realise du
+portefeuille :
+
+```text
+future_portfolio_state_t+H -> target_portfolio_encoder_EMA -> z_portfolio_t+H
+```
+
+La loss V5 devient :
+
+```text
+L =
+    market_jepa_loss
+  + portfolio_action_jepa_loss
+  + VICReg
+  + outcome_prediction_loss
+  + cost_prediction_loss
+  + pairwise_action_ranking_loss
+```
+
+Le ranking compare les actions selon leur cout realise, pas selon une regle
+cash/risk-off :
+
+```text
+if realized_cost(action_i) < realized_cost(action_j):
+    predicted_cost(action_i) < predicted_cost(action_j)
+```
+
+La V5 corrige les derives V4 par construction :
+
+```text
+V4:
+    cash devient une regle prioritaire
+V5:
+    cash est une action candidate comme les autres
+
+V4:
+    action entrainee != action executee
+V5:
+    projection d'action commune entre dataset, planner et environnement
+
+V4:
+    validation accepte 100% cash
+V5:
+    near-zero exposure ou zero trade invalide le backtest agent
+```

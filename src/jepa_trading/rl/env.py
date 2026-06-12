@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from jepa_trading.data.actions import project_portfolio_action
 from jepa_trading.data.dataset import MarketArrays
 
 
@@ -93,46 +94,17 @@ class TradingEnv:
         return np.concatenate([self.observer.market_state(self.idx), self._portfolio_features()]).astype(np.float32)
 
     def _sanitize_action(self, action: np.ndarray) -> np.ndarray:
-        action = np.asarray(action, dtype=np.float32).copy()
-        if action.shape[0] != self.n_assets + 1:
-            raise ValueError(f"Expected action size {self.n_assets + 1}, got {action.shape[0]}")
-        tradable = self.tradable_mask()
-        if self.mode == "long_only":
-            action[:-1] = np.where(tradable, np.clip(action[:-1], 0.0, self.max_long_weight), 0.0)
-            action[-1] = max(float(action[-1]), 0.0)
-            total = float(action.sum())
-            if total <= 1e-8:
-                action[-1] = 1.0
-                total = 1.0
-            action /= total
-        elif self.mode in {"long_short", "market_neutral"}:
-            action[:-1] = np.where(
-                tradable,
-                np.clip(action[:-1], -self.max_short_weight, self.max_long_weight),
-                0.0,
-            )
-            if self.mode == "market_neutral":
-                valid = tradable & (np.abs(action[:-1]) > 0)
-                if valid.any():
-                    asset_action = action[:-1]
-                    asset_action[valid] -= asset_action[valid].mean()
-                    action[:-1] = asset_action
-            gross = float(np.abs(action[:-1]).sum())
-            if gross > self.max_gross_exposure:
-                action[:-1] *= self.max_gross_exposure / gross
-            net = float(action[:-1].sum())
-            if abs(net) > self.max_net_exposure:
-                action[:-1] *= self.max_net_exposure / abs(net)
-            action[-1] = max(1.0 - float(np.abs(action[:-1]).sum()), 0.0)
-        else:
-            raise ValueError(f"Unknown portfolio mode: {self.mode}")
-        turnover = float(np.abs(action - self.state.weights).sum())
-        if turnover > self.max_turnover:
-            alpha = self.max_turnover / turnover
-            action = self.state.weights + alpha * (action - self.state.weights)
-            action = np.clip(action, 0.0, None)
-            action /= action.sum().clip(min=1e-8)
-        return action.astype(np.float32)
+        return project_portfolio_action(
+            self.state.weights,
+            action,
+            self.tradable_mask(),
+            mode=self.mode,
+            max_long_weight=self.max_long_weight,
+            max_short_weight=self.max_short_weight,
+            max_gross_exposure=self.max_gross_exposure,
+            max_net_exposure=self.max_net_exposure,
+            max_turnover=self.max_turnover,
+        )
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, dict[str, float], np.ndarray]:
         prev_equity = self.state.equity

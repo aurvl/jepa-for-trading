@@ -17,6 +17,11 @@ def validate_backtest_history(history: pd.DataFrame, name: str = "strategy") -> 
         return {"model": name, "valid_backtest": False, "invalid_reason": "non-finite values in backtest"}
     if (history["equity"].astype(float) <= 0).any():
         return {"model": name, "valid_backtest": False, "invalid_reason": "non-positive equity"}
+    if "selected_action_name" in history.columns:
+        if "gross_exposure" in history.columns and float(history["gross_exposure"].astype(float).mean()) < 0.05:
+            return {"model": name, "valid_backtest": False, "invalid_reason": "degenerate near-zero exposure"}
+        if "turnover" in history.columns and float(history["turnover"].astype(float).sum()) <= 1e-8:
+            return {"model": name, "valid_backtest": False, "invalid_reason": "degenerate no-trade strategy"}
     return {"model": name, "valid_backtest": True, "invalid_reason": ""}
 
 

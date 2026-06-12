@@ -165,3 +165,30 @@ v4:
     energy: 0.5
     policy: 0.25
     rank: 0.7
+
+v5:
+  world_max_steps: 3000
+  world_warmup_steps: 500
+  n_sampled_actions: 8
+  planner_sampled_actions: 128
+  rank_margin: 0.05
+  cost:
+    annual_return_target: 0.10
+    max_drawdown: -0.12
+    max_annual_vol: 0.15
+    turnover_budget: 0.20
+    cost_budget: 0.01
+    return_shortfall_weight: 1.0
+    drawdown_weight: 2.0
+    volatility_weight: 0.4
+    turnover_weight: 0.2
+    cost_weight: 2.0
+    concentration_weight: 0.05
+    cost_clip: 3.0
+  loss_weights:
+    market_jepa: 1.0
+    portfolio_jepa: 1.0
+    vicreg: 0.05
+    outcome: 1.0
+    cost: 0.5
+    rank: 0.7

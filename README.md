@@ -12,6 +12,9 @@ This repository keeps the experimental path explicit:
   de-risk candidates trained by a ranking objective.
 - `version4`: V3 plus drawdown-aware utility labels, hard risk-off planner
   overrides, scheduled rechecks, and per-asset weight diagnostics.
+- `version5`: action-conditioned JEPA world model planner. Candidate actions
+  condition portfolio transitions and costs; the market transition remains
+  action-independent.
 
 The current branch implements V4 while keeping V1, V2 and V3 notebooks executable.
 
@@ -142,6 +145,12 @@ Use V4:
 
 ```text
 notebooks/04_v4_risk_off_world_model_planner.ipynb
+```
+
+Use V5:
+
+```text
+notebooks/05_v5_action_conditioned_world_model.ipynb
 ```
 
 Upload `macro_data.parquet` as a Kaggle dataset. The notebook auto-discovers it
