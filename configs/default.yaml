@@ -153,6 +153,9 @@ v4:
     hard_risk_off_drawdown: -0.06
     hard_risk_off_return: -0.03
     min_action_advantage: 0.005
+    cash_bootstrap_min_return: -0.03
+    cash_bootstrap_max_drawdown: -0.12
+    cash_bootstrap_score_tolerance: 0.15
     rebalance_every: 5
     force_recheck_after: 20
   loss_weights:

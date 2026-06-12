@@ -48,6 +48,9 @@ class V4RiskOffPlanner:
         hard_risk_off_drawdown: float = -0.06,
         hard_risk_off_return: float = -0.03,
         min_action_advantage: float = 0.005,
+        cash_bootstrap_min_return: float = -0.03,
+        cash_bootstrap_max_drawdown: float = -0.12,
+        cash_bootstrap_score_tolerance: float = 0.15,
         rebalance_every: int = 5,
         force_recheck_after: int = 20,
         chunk_size: int = 256,
@@ -66,6 +69,9 @@ class V4RiskOffPlanner:
         self.hard_risk_off_drawdown = hard_risk_off_drawdown
         self.hard_risk_off_return = hard_risk_off_return
         self.min_action_advantage = min_action_advantage
+        self.cash_bootstrap_min_return = cash_bootstrap_min_return
+        self.cash_bootstrap_max_drawdown = cash_bootstrap_max_drawdown
+        self.cash_bootstrap_score_tolerance = cash_bootstrap_score_tolerance
         self.rebalance_every = max(1, rebalance_every)
         self.force_recheck_after = max(1, force_recheck_after)
         self.chunk_size = chunk_size
@@ -126,6 +132,7 @@ class V4RiskOffPlanner:
         outcome_np = np.concatenate(outcomes, axis=0)
         raw_score_np = np.concatenate(raw_scores, axis=0)
         turnover = np.abs(actions_np - current_weights[None]).sum(axis=1)
+        outcome_np = self._sanitize_outcomes(outcome_np, actions_np, current_weights, turnover)
         scores = self._transparent_scores(outcome_np, raw_score_np, turnover)
 
         hold_idx = self._best_named_idx(scores, names, "hold")
@@ -134,15 +141,22 @@ class V4RiskOffPlanner:
         best_idx = int(np.argmax(scores))
         best_risk_idx = self._best_risk_idx(scores, names)
         hold_outcome = outcome_np[hold_idx]
+        is_all_cash = bool(current_weights[-1] >= 0.98 and np.abs(current_weights[:-1]).sum() <= 0.02)
         hard_risk_off = bool(
-            hold_outcome[1] <= self.hard_risk_off_drawdown
-            or hold_outcome[0] <= self.hard_risk_off_return
+            not is_all_cash
+            and (
+                hold_outcome[1] <= self.hard_risk_off_drawdown
+                or hold_outcome[0] <= self.hard_risk_off_return
+            )
         )
         due_rebalance = (step_count % self.rebalance_every == 0) or (days_since_trade >= self.force_recheck_after)
 
         selected_idx = hold_idx
         selected_reason = "hold_default"
-        if hard_risk_off:
+        if is_all_cash and self._cash_bootstrap_ok(scores, outcome_np, hold_idx, best_risk_idx):
+            selected_idx = best_risk_idx
+            selected_reason = "cash_bootstrap_best_risk"
+        elif hard_risk_off:
             selected_idx = cash_idx if scores[cash_idx] >= scores[derisk_idx] else derisk_idx
             selected_reason = "hard_risk_off_defensive"
         elif scores[best_idx] >= scores[hold_idx] + self.min_action_advantage:
@@ -176,6 +190,47 @@ class V4RiskOffPlanner:
             best_risk_score=float(scores[best_risk_idx]),
             hold_predicted_outcome=hold_outcome,
             best_risk_predicted_outcome=outcome_np[best_risk_idx],
+        )
+
+    def _sanitize_outcomes(
+        self,
+        outcomes: np.ndarray,
+        actions: np.ndarray,
+        current_weights: np.ndarray,
+        turnover: np.ndarray,
+    ) -> np.ndarray:
+        out = np.nan_to_num(outcomes.copy(), nan=0.0, posinf=0.0, neginf=0.0)
+        # Financial constraints the neural head should not be allowed to violate.
+        out[:, 1] = np.minimum(out[:, 1], 0.0)
+        out[:, 2] = np.maximum(out[:, 2], 0.0)
+        out[:, 3] = np.maximum(out[:, 3], 0.0)
+        out[:, 4] = np.maximum(out[:, 4], 0.0)
+
+        gross = np.abs(actions[:, :-1]).sum(axis=1)
+        cash_like = gross <= 1e-6
+        if cash_like.any():
+            cost = np.clip(turnover[cash_like] * self.action_config.transaction_cost_bps / 10000.0, 0.0, 1.0)
+            log_after_cost = np.log(np.maximum(1.0 - cost, 1e-6))
+            out[cash_like, 0] = log_after_cost
+            out[cash_like, 1] = np.minimum(log_after_cost, 0.0)
+            out[cash_like, 2] = 0.0
+            out[cash_like, 3] = turnover[cash_like]
+            out[cash_like, 4] = cost
+            out[cash_like, 5] = log_after_cost
+        return out
+
+    def _cash_bootstrap_ok(
+        self,
+        scores: np.ndarray,
+        outcomes: np.ndarray,
+        hold_idx: int,
+        best_risk_idx: int,
+    ) -> bool:
+        risk_outcome = outcomes[best_risk_idx]
+        return bool(
+            scores[best_risk_idx] >= scores[hold_idx] - self.cash_bootstrap_score_tolerance
+            and risk_outcome[0] >= self.cash_bootstrap_min_return
+            and risk_outcome[1] >= self.cash_bootstrap_max_drawdown
         )
 
     def _transparent_scores(self, outcomes: np.ndarray, raw_energy: np.ndarray, turnover: np.ndarray) -> np.ndarray:
