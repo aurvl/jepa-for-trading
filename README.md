@@ -1,7 +1,7 @@
-# JEPA for Trading
+# The Quant Financial Agent: A smart world model for trading
 
-Multi-asset JEPA market representation learning plus a direct PPO portfolio
-agent.
+Multi-asset JEPA market representation learning plus action-conditioned
+portfolio world-model planning.
 
 This repository keeps the experimental path explicit:
 
@@ -12,11 +12,12 @@ This repository keeps the experimental path explicit:
   de-risk candidates trained by a ranking objective.
 - `version4`: V3 plus drawdown-aware utility labels, hard risk-off planner
   overrides, scheduled rechecks, and per-asset weight diagnostics.
-- `version5`: action-conditioned JEPA world model planner. Candidate actions
-  condition portfolio transitions and costs; the market transition remains
-  action-independent.
+- `version5`: action-primitive JEPA world quant agent. Primitive trading
+  intentions condition portfolio transitions and costs; the market transition
+  remains action-independent.
 
-The current branch implements V4 while keeping V1, V2 and V3 notebooks executable.
+The current branch implements V5 while keeping V1, V2, V3 and V4 notebooks
+executable.
 
 V1 includes:
 
@@ -120,6 +121,48 @@ best imagined trade against hold/cash/de-risk and refuses to trade unless the
 score advantage clears a margin. This is meant to reduce forced trading during
 bad regimes, lower turnover, and make cash a real action rather than a passive
 leftover weight.
+
+## V5 Direction
+
+V5 removes the strategy-selector mistake. The planner no longer chooses among
+internal candidates like `momentum`, `equal_weight`, `vol_target` or
+`risk_parity`. Those remain evaluation baselines only.
+
+The V5 internal action is a primitive intent:
+
+```text
+asset_scores
+gross_exposure_delta
+net_exposure_target
+cash_target_delta
+risk_budget
+rebalance_intensity
+horizon
+long_short_bias
+```
+
+A single execution layer projects that primitive into executable portfolio
+weights under the same constraints in training, planning and backtesting. The
+market world model predicts future market latents from market state and
+horizon only. The portfolio world model predicts future portfolio latents and
+probabilistic outcomes from market latents, portfolio state, primitive action,
+executable action and horizon. The goal enters only the cost/energy model; it
+does not modify the transition dynamics.
+
+V5 saves diagnostics under `outputs/v5_latest/`, including:
+
+- `agent_history.csv`;
+- `planner_diagnostics.csv`;
+- `experience_buffer.csv` / `experience_buffer.parquet`;
+- `primitive_action_stats.csv`;
+- `horizon_distribution.csv`;
+- `prediction_error.csv`;
+- `calibration_report.csv`;
+- `validity.csv`.
+
+Any backtest with non-finite values, near-zero exposure, zero trades, negative
+equity or cash collapse must be treated as invalid, not as a successful
+defensive strategy.
 
 ## Kaggle
 

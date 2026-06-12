@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
+from jepa_trading.data.v5_dataset import V5_OUTCOME_KEYS, V5_QUANTILES
 from jepa_trading.models.jepa import jepa_latent_loss
 from jepa_trading.models.world_model_v5 import V5ActionConditionedWorldModel
 from jepa_trading.training.checkpoints import save_checkpoint
@@ -27,8 +28,23 @@ def _normalized_latent_loss(z_hat: torch.Tensor, z_target: torch.Tensor) -> torc
     return (2 - 2 * (z_hat * z_target).sum(dim=-1)).mean()
 
 
+def pinball_loss(pred_quantiles: torch.Tensor, target: torch.Tensor, quantiles: tuple[float, ...] = V5_QUANTILES) -> torch.Tensor:
+    q = torch.tensor(quantiles, dtype=pred_quantiles.dtype, device=pred_quantiles.device)
+    error = target.unsqueeze(-1) - pred_quantiles
+    return torch.maximum(q * error, (q - 1.0) * error).mean()
+
+
+def pairwise_ranking_loss(cost_hat: torch.Tensor, realized_costs: torch.Tensor, margin: float = 0.05) -> torch.Tensor:
+    best_idx = torch.argmin(realized_costs, dim=1)
+    best_hat = cost_hat.gather(1, best_idx[:, None]).squeeze(1)
+    raw = F.relu(margin + best_hat[:, None] - cost_hat)
+    mask = torch.ones_like(raw, dtype=torch.bool)
+    mask.scatter_(1, best_idx[:, None], False)
+    return raw[mask].mean()
+
+
 def v5_world_model_loss(
-    outputs: dict[str, torch.Tensor],
+    outputs: dict,
     batch: dict[str, torch.Tensor],
     step: int,
     warmup_steps: int,
@@ -41,30 +57,50 @@ def v5_world_model_loss(
     var_hat, cov_hat = vicreg_regularizer(outputs["z_market_hat"])
     vicreg = var_now + cov_now + 0.5 * (var_hat + cov_hat)
 
-    outcome = F.smooth_l1_loss(outputs["outcome_hat"], batch["outcomes"])
-    cost = F.smooth_l1_loss(outputs["cost_hat"], batch["goal_costs"])
-
-    best_idx = batch["best_action_index"]
-    best_cost_hat = outputs["cost_hat"].gather(1, best_idx[:, None]).squeeze(1)
-    rank_raw = F.relu(rank_margin + best_cost_hat[:, None] - outputs["cost_hat"])
-    rank_mask = torch.ones_like(rank_raw, dtype=torch.bool)
-    rank_mask.scatter_(1, best_idx[:, None], False)
-    rank = rank_raw[rank_mask].mean()
+    outcomes = batch["realized_outcomes"]
+    out_hat = outputs["outcome_hat"]
+    idx = {name: i for i, name in enumerate(V5_OUTCOME_KEYS)}
+    return_q = pinball_loss(out_hat["return_quantiles"], outcomes[..., idx["realized_return"]])
+    drawdown_q = pinball_loss(out_hat["drawdown_quantiles"], outcomes[..., idx["drawdown"]])
+    volatility = F.smooth_l1_loss(out_hat["volatility"], outcomes[..., idx["volatility"]])
+    turnover = F.smooth_l1_loss(out_hat["turnover"], outcomes[..., idx["turnover"]])
+    transaction_cost = F.smooth_l1_loss(out_hat["cost"], outcomes[..., idx["transaction_cost"]])
+    cvar = F.smooth_l1_loss(out_hat["cvar"], outcomes[..., idx["cvar"]])
+    equity = F.smooth_l1_loss(out_hat["future_equity_ratio"], outcomes[..., idx["future_equity_ratio"]])
+    prob_loss = F.binary_cross_entropy_with_logits(out_hat["prob_loss_logit"], outcomes[..., idx["prob_loss"]])
+    prob_drawdown = F.binary_cross_entropy_with_logits(
+        out_hat["prob_drawdown_breach_logit"], outcomes[..., idx["prob_drawdown_breach"]]
+    )
+    outcome = return_q + drawdown_q + volatility + turnover + transaction_cost + cvar + equity + prob_loss + prob_drawdown
+    cost = F.smooth_l1_loss(outputs["cost_hat"], batch["realized_costs"])
+    rank = pairwise_ranking_loss(outputs["cost_hat"], batch["realized_costs"], margin=rank_margin)
 
     phase = min(1.0, max(0.0, step / max(warmup_steps, 1)))
     loss = (
-        weights["market_jepa"] * market_jepa
-        + weights["portfolio_jepa"] * portfolio_jepa
-        + weights["vicreg"] * vicreg
-        + phase * weights["outcome"] * outcome
-        + phase * weights["cost"] * cost
-        + phase * weights["rank"] * rank
+        weights.get("market_jepa", 1.0) * market_jepa
+        + weights.get("portfolio_jepa", 1.0) * portfolio_jepa
+        + weights.get("vicreg", 0.05) * vicreg
+        + phase * weights.get("return_quantile", weights.get("outcome", 1.0)) * return_q
+        + phase * weights.get("drawdown_quantile", weights.get("outcome", 1.0)) * drawdown_q
+        + phase * weights.get("outcome_aux", weights.get("outcome", 1.0)) * (volatility + turnover + transaction_cost + cvar + equity)
+        + phase * weights.get("probability", 0.5) * (prob_loss + prob_drawdown)
+        + phase * weights.get("cost", 0.5) * cost
+        + phase * weights.get("rank", 0.7) * rank
     )
     return {
         "loss": loss,
         "market_jepa_loss": market_jepa,
         "portfolio_jepa_loss": portfolio_jepa,
         "vicreg_loss": vicreg,
+        "return_quantile_loss": return_q,
+        "drawdown_quantile_loss": drawdown_q,
+        "volatility_loss": volatility,
+        "turnover_loss": turnover,
+        "transaction_cost_loss": transaction_cost,
+        "cvar_loss": cvar,
+        "future_equity_loss": equity,
+        "prob_loss_bce": prob_loss,
+        "drawdown_breach_bce": prob_drawdown,
         "outcome_loss": outcome,
         "cost_loss": cost,
         "rank_loss": rank,
@@ -155,7 +191,7 @@ def train_v5_world_model(
                     optimizer,
                     step=step,
                     val_loss=best_val,
-                    kind="v5_action_conditioned_world_model",
+                    kind="v5_action_primitive_world_model",
                 )
         history.append(row)
         if history_path is not None and (

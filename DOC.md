@@ -321,6 +321,57 @@ notebooks/03_v3_world_model_abstention_planner.ipynb
 notebooks/04_v4_risk_off_world_model_planner.ipynb
 ```
 
+## V5. Action-Primitive World Model
+
+La V5 corrige la derive des versions precedentes : le planner ne choisit plus
+des strategies predefinies. Il optimise des primitives d'action, puis une
+couche d'execution unique les transforme en poids de portefeuille executables.
+
+```text
+market history
+   -> market JEPA encoder
+   -> z_market_now
+   -> market predictor by horizon
+   -> z_market_future_hat
+
+portfolio_state + primitive_action + executable_weights + z_market_now + z_market_future_hat
+   -> portfolio world model
+   -> future portfolio latent
+   -> probabilistic outcomes
+
+predicted outcomes + goal
+   -> cost / energy model
+   -> planner score
+```
+
+Le `goal` n'entre pas dans la dynamique du monde. Il sert seulement a evaluer
+si les consequences predites d'une action sont desirables.
+
+```text
+PrimitiveAction:
+    asset_scores[n_assets]
+    gross_exposure_delta
+    net_exposure_target
+    cash_target_delta
+    risk_budget
+    rebalance_intensity
+    horizon
+    long_short_bias
+```
+
+Le planner V5 utilise un MPC/CEM :
+
+```text
+sample primitive actions
+project through execution layer
+predict probabilistic outcomes
+score with cost model
+keep elites
+resample around elites
+execute one action
+replan tomorrow
+```
+
 Le notebook V1 documente le run exécuté et son échec. Le notebook V2 orchestre
 le world model JEPA action-conditioned et le planner.
 

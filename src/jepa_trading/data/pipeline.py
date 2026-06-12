@@ -226,6 +226,9 @@ def create_v5_dataloaders(config: dict, arrays, batch_size: int | None = None) -
         volatility_weight=cost_cfg.get("volatility_weight", 0.4),
         turnover_weight=cost_cfg.get("turnover_weight", 0.2),
         cost_weight=cost_cfg.get("cost_weight", 2.0),
+        cvar_weight=cost_cfg.get("cvar_weight", 0.8),
+        loss_prob_weight=cost_cfg.get("loss_prob_weight", 0.4),
+        breach_prob_weight=cost_cfg.get("breach_prob_weight", 0.6),
         concentration_weight=cost_cfg.get("concentration_weight", 0.05),
         cost_clip=cost_cfg.get("cost_clip", 3.0),
     )

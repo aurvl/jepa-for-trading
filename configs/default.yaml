@@ -169,9 +169,14 @@ v4:
 v5:
   world_max_steps: 3000
   world_warmup_steps: 500
-  n_sampled_actions: 8
-  planner_sampled_actions: 128
+  n_sampled_actions: 12
+  planner_sampled_actions: 192
+  cem_iters: 3
+  cem_elite_frac: 0.20
+  uncertainty_penalty: 0.15
+  turnover_penalty: 0.02
   rank_margin: 0.05
+  quantiles: [0.05, 0.25, 0.50, 0.75, 0.95]
   cost:
     annual_return_target: 0.10
     max_drawdown: -0.12
@@ -183,12 +188,18 @@ v5:
     volatility_weight: 0.4
     turnover_weight: 0.2
     cost_weight: 2.0
+    cvar_weight: 0.8
+    loss_prob_weight: 0.4
+    breach_prob_weight: 0.6
     concentration_weight: 0.05
     cost_clip: 3.0
   loss_weights:
     market_jepa: 1.0
     portfolio_jepa: 1.0
     vicreg: 0.05
-    outcome: 1.0
+    return_quantile: 1.0
+    drawdown_quantile: 1.0
+    outcome_aux: 0.5
+    probability: 0.5
     cost: 0.5
     rank: 0.7
