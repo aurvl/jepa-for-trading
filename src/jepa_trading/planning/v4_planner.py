@@ -34,6 +34,8 @@ class V4PlannerResult:
 
 
 class V4RiskOffPlanner:
+    CODE_VERSION = "v4.1-cash-bootstrap-exact-cash-outcomes"
+
     def __init__(
         self,
         model: V2WorldModel,
