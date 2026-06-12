@@ -17,6 +17,7 @@ src/jepa_trading/data/scaling.py
 src/jepa_trading/data/splits.py
 src/jepa_trading/data/v2_dataset.py
 src/jepa_trading/data/v3_dataset.py
+src/jepa_trading/data/v4_dataset.py
 src/jepa_trading/evaluation/__init__.py
 src/jepa_trading/evaluation/backtest.py
 src/jepa_trading/evaluation/metrics.py
@@ -24,6 +25,7 @@ src/jepa_trading/evaluation/plots.py
 src/jepa_trading/evaluation/statistical_tests.py
 src/jepa_trading/evaluation/v2_backtest.py
 src/jepa_trading/evaluation/v3_backtest.py
+src/jepa_trading/evaluation/v4_backtest.py
 src/jepa_trading/models/__init__.py
 src/jepa_trading/models/encoders.py
 src/jepa_trading/models/heads.py
@@ -33,6 +35,7 @@ src/jepa_trading/models/world_model_v2.py
 src/jepa_trading/planning/__init__.py
 src/jepa_trading/planning/v2_planner.py
 src/jepa_trading/planning/v3_planner.py
+src/jepa_trading/planning/v4_planner.py
 src/jepa_trading/rl/__init__.py
 src/jepa_trading/rl/env.py
 src/jepa_trading/rl/observer.py
@@ -44,6 +47,7 @@ src/jepa_trading/training/train_heads.py
 src/jepa_trading/training/train_jepa.py
 src/jepa_trading/training/train_v2.py
 src/jepa_trading/training/train_v3.py
+src/jepa_trading/training/train_v4.py
 src/jepa_trading/training/vicreg.py
 src/jepa_trading/utils/__init__.py
 src/jepa_trading/utils/device.py
@@ -51,3 +55,4 @@ src/jepa_trading/utils/seed.py
 tests/test_smoke.py
 tests/test_v2_world_model.py
 tests/test_v3_abstention_world_model.py
+tests/test_v4_risk_off_planner.py
