@@ -20,4 +20,7 @@ logs/*
 !data/cache/.gitkeep
 !models/.gitkeep
 !outputs/.gitkeep
+!outputs/v5_latest/
+!outputs/v5_latest/**
 !logs/.gitkeep
+
