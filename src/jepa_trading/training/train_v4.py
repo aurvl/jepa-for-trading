@@ -122,12 +122,18 @@ def train_v4_world_model(
     rank_margin: float = 0.05,
     eval_every: int = 200,
     log_every: int = 25,
+    history_path: str | Path | None = None,
+    history_save_every: int | None = None,
 ) -> pd.DataFrame:
     model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     batches = iter(train_loader)
     best_val = float("inf")
     history: list[dict[str, float]] = []
+    history_save_every = history_save_every or log_every
+    history_path = Path(history_path) if history_path is not None else None
+    if history_path is not None:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
 
     pbar = tqdm(range(1, max_steps + 1), desc="train V4 risk-off world model", dynamic_ncols=True)
     for step in pbar:
@@ -164,6 +170,16 @@ def train_v4_world_model(
                     kind="v4_risk_off_world_model",
                 )
         history.append(row)
+        if history_path is not None and (
+            step == 1
+            or step % history_save_every == 0
+            or step % eval_every == 0
+            or step == max_steps
+        ):
+            pd.DataFrame(history).to_csv(history_path, index=False)
         if step % log_every == 0:
             pbar.set_postfix(loss=f"{row['loss']:.4f}", best_val=f"{best_val:.4f}")
-    return pd.DataFrame(history)
+    history_df = pd.DataFrame(history)
+    if history_path is not None:
+        history_df.to_csv(history_path, index=False)
+    return history_df
