@@ -755,3 +755,146 @@ run_summary.json
 Le fichier le plus important est `portfolio_weights.csv`, car il permet enfin
 de voir ce que l'agent détient réellement actif par actif, et pas seulement
 l'equity curve.
+
+## 16. Audit V4 : diagnostic et changement de cap
+
+Le run V4 doit etre considere comme invalide. Les artefacts montrent une
+strategie degeneree :
+
+```text
+avg_cash_weight   = 1.0
+avg_gross_exposure = 0.0
+avg_turnover      = 0.0
+final_equity      = 1000.0
+actions           = cash / hold seulement
+```
+
+Ce n'est donc pas une strategie prudente qui a choisi d'attendre. C'est un
+planner qui n'entre jamais vraiment en position.
+
+### Lecture de la loss V4
+
+Les checkpoints disponibles indiquent :
+
+```text
+v4_world_model.pt:
+    step     = 400
+    val_loss = 0.283
+
+v4_world_model_run2.pt:
+    step     = 600
+    val_loss = 0.323
+```
+
+Le second run est donc pire que le premier. Continuer l'entrainement a degrade
+la validation loss. La decomposition recalculee sur validation donne environ :
+
+```text
+V4 step 400:
+    loss                 0.272
+    jepa_loss            0.091
+    vicreg_loss          1.801  -> contribution 0.090 avec poids 0.05
+    outcome_loss         0.019
+    energy_loss          0.082  -> contribution 0.041 avec poids 0.5
+    rank_loss            0.042  -> contribution 0.030 avec poids 0.7
+    risk_off_rank_loss   0.006
+    risk_on_rank_loss    0.076
+
+V4 step 600:
+    loss                 0.315
+    jepa_loss            0.130
+    outcome_loss         0.018
+    energy_loss          0.081
+    rank_loss            0.052
+```
+
+La degradation vient surtout de `jepa_loss`, pas seulement du planner. La
+similarite latente reste raisonnable, mais le gap train/validation montre une
+generalisation temporelle faible. En plus, la loss totale est dominee par
+`JEPA + VICReg`; elle ne mesure pas directement la qualite des decisions de
+trading.
+
+Interpretation :
+
+```text
+Le JEPA apprend une representation sur train,
+mais la decision portfolio n'est pas alignee avec le backtest.
+```
+
+### Failles identifiees
+
+1. Les outputs V4 precedents peuvent venir d'un code stale Kaggle : le planner
+   a signale `hard_risk_off_defensive` alors que le portefeuille etait deja
+   100% cash.
+
+2. Il y a un mismatch train/backtest : le dataset calcule les outcomes sur les
+   actions candidates, alors que l'environnement reel reprojette ces actions
+   avec les contraintes de turnover, poids max et cash.
+
+3. Les `portfolio_state` d'entrainement sont trop aleatoires et ne couvrent pas
+   assez le cas critique `100% cash -> entrer en marche`.
+
+4. La validation accepte une strategie 100% cash comme `valid_backtest=True`.
+   Il manque des garde-fous de degenerescence : exposition moyenne, nombre de
+   trades, diversite d'actions, concentration cash.
+
+5. Le scoring final combine energy, return, drawdown, volatilite et turnover
+   avec des poids manuels non calibres sur validation.
+
+### Probleme conceptuel : pas encore un vrai planner JEPA goal-conditioned
+
+Les versions V1-V4 sont inspirees JEPA, mais elles ne sont pas encore un vrai
+systeme de planning JEPA au sens fort, car aucun goal explicite n'est donne au
+modele. Le planner choisit surtout le meilleur score local parmi des actions :
+
+```text
+market history
+    -> latent JEPA
+    -> outcome model
+    -> score local
+    -> action
+```
+
+Un vrai world model goal-conditioned devrait plutot suivre :
+
+```text
+current state s_t
+goal g
+candidate action sequence a_t:t+H
+world model predicts future latent/outcome
+energy measures distance(predicted_future, goal)
+planner chooses action sequence minimizing energy
+```
+
+Pour le trading, le goal doit etre explicite, par exemple :
+
+```text
+goal =
+    target_return_horizon
+    max_drawdown
+    max_volatility
+    turnover_budget
+    cost_budget
+    horizon
+```
+
+La prochaine version ne doit donc pas ajouter une regle `risk-off` de plus. Elle
+doit repartir d'un objectif plus propre :
+
+```text
+V5 = Goal-Conditioned World Model Planner
+```
+
+### Recommandations finales
+
+1. Ne pas interpreter V4 comme une strategie gagnante : le backtest est
+   degenere.
+2. Garder V3 comme meilleur artefact empirique actuel, mais le decrire comme
+   `JEPA-selected portfolio + buy-and-hold`, pas comme un vrai planner adaptatif.
+3. Pour V4, si on continue, utiliser plutot `v4_world_model.pt` que
+   `v4_world_model_run2.pt`, car la validation loss est meilleure.
+4. Pour la suite, retirer PPO et les regles ad hoc du coeur methodologique.
+5. Construire V5 autour de `goal -> imagination -> energy -> planning`.
+6. Ajouter des validations bloquantes : strategie 100% cash, zero trade,
+   exposition trop basse ou action diversity trop faible doivent rendre le
+   backtest invalide.
