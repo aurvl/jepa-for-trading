@@ -10,8 +10,10 @@ This repository keeps the experimental path explicit:
   imagination + MLP planner policy.
 - `version3`: V2 plus abstention/risk-off planning with hold, cash and
   de-risk candidates trained by a ranking objective.
+- `version4`: V3 plus drawdown-aware utility labels, hard risk-off planner
+  overrides, scheduled rechecks, and per-asset weight diagnostics.
 
-The current branch implements V3 while keeping V1 and V2 notebooks executable.
+The current branch implements V4 while keeping V1, V2 and V3 notebooks executable.
 
 V1 includes:
 
@@ -134,6 +136,12 @@ Use V3:
 
 ```text
 notebooks/03_v3_world_model_abstention_planner.ipynb
+```
+
+Use V4:
+
+```text
+notebooks/04_v4_risk_off_world_model_planner.ipynb
 ```
 
 Upload `macro_data.parquet` as a Kaggle dataset. The notebook auto-discovers it

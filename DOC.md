@@ -318,6 +318,7 @@ Le repo garde trois notebooks de cheminement :
 notebooks/01_v1_runned_jepa_ppo_failure_analysis.ipynb
 notebooks/02_v2_world_model_planner.ipynb
 notebooks/03_v3_world_model_abstention_planner.ipynb
+notebooks/04_v4_risk_off_world_model_planner.ipynb
 ```
 
 Le notebook V1 documente le run exécuté et son échec. Le notebook V2 orchestre
@@ -666,3 +667,91 @@ L'objectif n'est pas de garantir une performance positive. L'objectif V3 est de
 corriger un défaut précis de V2 : l'agent trade trop souvent, paie trop de
 frais, et ne possède pas assez de mécanisme pour rester cash/risk-off quand le
 marché devient défavorable.
+
+## 15. V4 : risk-off explicite et diagnostics de portefeuille
+
+Le run V3 a montré un comportement différent du problème V2. V3 ne trade plus
+trop. Il trouve surtout une allocation initiale, puis conserve cette position
+pendant presque tout le backtest. La performance peut être bonne, mais le
+comportement ressemble davantage à :
+
+```text
+JEPA-selected portfolio + buy-and-hold
+```
+
+qu'à :
+
+```text
+adaptive world-model planner
+```
+
+La V4 corrige donc un autre défaut : le modèle doit apprendre explicitement
+quand `cash` ou `derisk` doivent battre `hold`.
+
+La utility d'entraînement V4 devient plus risk-aware :
+
+```text
+utility =
+    return
+    - alpha * abs(drawdown)
+    - beta  * volatility
+    - gamma * turnover
+    - delta * costs
+    - eta   * concentration
+```
+
+Si le futur réalisé de `hold` est mauvais :
+
+```text
+hold_drawdown <= seuil
+or hold_return <= seuil
+```
+
+alors le dataset pénalise `hold` et booste `cash/derisk`. Le trainer ajoute
+aussi une contrainte de ranking :
+
+```text
+risk-off sample:
+    score(cash or derisk) > score(hold)
+```
+
+Le planner V4 ne choisit plus uniquement l'action avec l'energy apprise. Il
+combine energy et outcomes prédits :
+
+```text
+planner_score =
+    w_energy * energy
+    + predicted_return
+    - drawdown_penalty * abs(predicted_drawdown)
+    - volatility_penalty * predicted_vol
+    - turnover_penalty * turnover
+```
+
+Puis il applique une règle hard risk-off :
+
+```text
+if predicted_hold_drawdown <= threshold
+or predicted_hold_return <= threshold:
+    execute best(cash, derisk)
+else:
+    execute best action if advantage is sufficient
+```
+
+La V4 ajoute aussi des diagnostics obligatoires dans `outputs/v4_latest/` :
+
+```text
+agent_history.csv
+planner_diagnostics.csv
+portfolio_weights.csv
+metrics.csv
+random_summary.csv
+equity_curves.png
+drawdown.png
+cash_weight.png
+portfolio_weights.png
+run_summary.json
+```
+
+Le fichier le plus important est `portfolio_weights.csv`, car il permet enfin
+de voir ce que l'agent détient réellement actif par actif, et pas seulement
+l'equity curve.

@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from jepa_trading.data.dataset import MultiAssetJEPADataset, build_market_arrays
 from jepa_trading.data.v2_dataset import PortfolioActionConfig, V2WorldModelDataset
 from jepa_trading.data.v3_dataset import V3WorldModelDataset
+from jepa_trading.data.v4_dataset import V4RiskUtilityConfig, V4WorldModelDataset
 from jepa_trading.data.download import download_prices
 from jepa_trading.data.features import add_asset_features, infer_feature_columns
 from jepa_trading.data.macro import load_macro, merge_macro
@@ -125,6 +126,61 @@ def create_v3_dataloaders(config: dict, arrays, batch_size: int | None = None) -
         ),
         "test": V3WorldModelDataset(
             arrays, test_dates, lookback, horizons, action_cfg, seed=config["seed"] + 2, n_sampled_actions=config["v3"]["n_sampled_actions"]
+        ),
+    }
+    return {
+        split: DataLoader(ds, batch_size=batch, shuffle=(split == "train"), drop_last=(split == "train"))
+        for split, ds in datasets.items()
+    }
+
+
+def create_v4_dataloaders(config: dict, arrays, batch_size: int | None = None) -> dict[str, DataLoader]:
+    batch = batch_size or config["training"]["batch_size"]
+    lookback = config["data"]["lookback"]
+    horizons = config["data"]["horizons"]
+    dates = arrays.dates
+    train_end = pd.Timestamp(config["data"]["train_end"])
+    val_end = pd.Timestamp(config["data"]["val_end"])
+    train_dates = dates[dates <= train_end]
+    val_dates = dates[(dates > train_end) & (dates <= val_end)]
+    test_dates = dates[dates > val_end]
+    portfolio_cfg = config["portfolio"]
+    v4_cfg = config["v4"]
+    utility_cfg = v4_cfg["utility"]
+    action_cfg = PortfolioActionConfig(
+        mode=portfolio_cfg.get("mode", "long_only"),
+        cash_initial=portfolio_cfg["cash_initial"],
+        transaction_cost_bps=portfolio_cfg["transaction_cost_bps"],
+        max_long_weight=portfolio_cfg.get("max_long_weight", portfolio_cfg.get("max_weight_per_asset", 0.15)),
+        max_short_weight=portfolio_cfg.get("max_short_weight", 0.05),
+        max_gross_exposure=portfolio_cfg.get("max_gross_exposure", 1.0),
+        max_net_exposure=portfolio_cfg.get("max_net_exposure", 1.0),
+        borrow_cost_bps=portfolio_cfg.get("borrow_cost_bps", 2.0),
+        n_action_samples=v4_cfg["n_sampled_actions"],
+        derisk_fraction=portfolio_cfg.get("derisk_fraction", 0.50),
+    )
+    risk_utility_cfg = V4RiskUtilityConfig(
+        return_weight=utility_cfg.get("return_weight", 1.0),
+        drawdown_penalty=utility_cfg.get("drawdown_penalty", 2.5),
+        volatility_penalty=utility_cfg.get("volatility_penalty", 0.15),
+        turnover_penalty=utility_cfg.get("turnover_penalty", 0.04),
+        cost_penalty=utility_cfg.get("cost_penalty", 2.0),
+        concentration_penalty=utility_cfg.get("concentration_penalty", 0.04),
+        risk_off_drawdown=utility_cfg.get("risk_off_drawdown", -0.06),
+        risk_off_return=utility_cfg.get("risk_off_return", -0.03),
+        defensive_bonus=utility_cfg.get("defensive_bonus", 0.20),
+        hold_risk_off_penalty=utility_cfg.get("hold_risk_off_penalty", 0.25),
+        utility_clip=utility_cfg.get("utility_clip", 3.0),
+    )
+    datasets = {
+        "train": V4WorldModelDataset(
+            arrays, train_dates, lookback, horizons, action_cfg, risk_utility_cfg, seed=config["seed"], n_sampled_actions=v4_cfg["n_sampled_actions"]
+        ),
+        "val": V4WorldModelDataset(
+            arrays, val_dates, lookback, horizons, action_cfg, risk_utility_cfg, seed=config["seed"] + 1, n_sampled_actions=v4_cfg["n_sampled_actions"]
+        ),
+        "test": V4WorldModelDataset(
+            arrays, test_dates, lookback, horizons, action_cfg, risk_utility_cfg, seed=config["seed"] + 2, n_sampled_actions=v4_cfg["n_sampled_actions"]
         ),
     }
     return {
